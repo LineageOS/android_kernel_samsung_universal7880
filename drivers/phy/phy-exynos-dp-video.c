@@ -38,7 +38,7 @@ static void exynos_dp_video_phy_pwr_isol(struct exynos_dp_video_phy *state,
 	if (IS_ERR(state->regs))
 		return;
 
-	val = on ? 0 : EXYNOS5_PHY_ENABLE;
+	val = on ? 0 : (unsigned int)EXYNOS5_PHY_ENABLE;
 
 	regmap_update_bits(state->regs, state->drvdata->phy_ctrl_offset,
 			   EXYNOS5_PHY_ENABLE, val);

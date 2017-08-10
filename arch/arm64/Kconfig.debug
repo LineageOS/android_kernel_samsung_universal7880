@@ -6,6 +6,18 @@ config FRAME_POINTER
 	bool
 	default y
 
+config ARM64_PTDUMP
+	bool "Export kernel pagetable layout to userspace via debugfs"
+	depends on DEBUG_KERNEL
+	select DEBUG_FS
+        help
+	  Say Y here if you want to show the kernel pagetable layout in a
+	  debugfs file. This information is only useful for kernel developers
+	  who are working in architecture specific areas of the kernel.
+	  It is probably not a good idea to enable this feature in a production
+	  kernel.
+	  If in doubt, say "N"
+
 config STRICT_DEVMEM
 	bool "Filter access to /dev/mem"
 	depends on MMU
@@ -42,6 +54,19 @@ config ARM64_RANDOMIZE_TEXT_OFFSET
 	  only. Bootloaders must make no assumptions regarding the value
 	  of TEXT_OFFSET and platforms must not require a specific
 	  value.
+	  
+config TEXT_OFFSET_OVERRIDE
+	bool "Enable CONFIG_TEXT_OFFSET"
+	default n
+	help
+	  It defines the start of .text of kernel.
+	  Some SOCes may not start from 0x80000, and it want
+	  to reserve a memory region. So select this config.
+
+config TEXT_OFFSET
+	hex "Specific kernel TEXT offset from PAGE_OFFSET"
+	depends on TEXT_OFFSET_OVERRIDE
+	default 0x00080000
 
 config DEBUG_SET_MODULE_RONX
         bool "Set loadable kernel module data as NX and text as RO"

@@ -8,6 +8,7 @@
 
 struct irqaction;
 struct softirq_action;
+struct tasklet_struct;
 
 #define softirq_name(sirq) { sirq##_SOFTIRQ, #sirq }
 #define show_softirq_name(val)				\
@@ -142,6 +143,43 @@ DEFINE_EVENT(softirq, softirq_raise,
 	TP_PROTO(unsigned int vec_nr),
 
 	TP_ARGS(vec_nr)
+);
+
+/* tasklet traces */
+TRACE_EVENT(tasklet_entry,
+
+	TP_PROTO(struct tasklet_struct *t),
+
+	TP_ARGS(t),
+
+	TP_STRUCT__entry(
+		__field( void *,	function)
+		__field( unsigned long,	data 	)
+	),
+
+	TP_fast_assign(
+		__entry->function = t->func;
+		__entry->data = t->data;
+	),
+
+	TP_printk("function=%pf data=%lx", __entry->function, __entry->data)
+);
+
+TRACE_EVENT(tasklet_exit,
+
+	TP_PROTO(struct tasklet_struct *t),
+
+	TP_ARGS(t),
+
+	TP_STRUCT__entry(
+		__field( void *,	function)
+	),
+
+	TP_fast_assign(
+		__entry->function = t->func;
+	),
+
+	TP_printk("function=%pf", __entry->function)
 );
 
 #endif /*  _TRACE_IRQ_H */

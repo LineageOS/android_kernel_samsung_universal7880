@@ -19,6 +19,7 @@
 #include <linux/ktime.h>
 #include <linux/hrtimer.h>
 #include <linux/module.h>
+#include <linux/exynos-ss.h>
 #include <trace/events/power.h>
 
 #include "cpuidle.h"
@@ -120,11 +121,14 @@ int cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_driver *drv,
 	s64 diff;
 
 	trace_cpu_idle_rcuidle(index, dev->cpu);
+	exynos_ss_cpuidle(index, 0, 0, ESS_FLAG_IN);
 	time_start = ktime_get();
 
 	entered_state = target_state->enter(dev, drv, index);
 
 	time_end = ktime_get();
+	exynos_ss_cpuidle(index, entered_state,
+		(int)ktime_to_us(ktime_sub(time_end, time_start)), ESS_FLAG_OUT);
 	trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, dev->cpu);
 
 	if (!cpuidle_state_is_coupled(dev, drv, entered_state))
@@ -560,6 +564,46 @@ static inline void latency_notifier_init(struct notifier_block *n)
 #define latency_notifier_init(x) do { } while (0)
 
 #endif /* CONFIG_SMP */
+
+#ifdef CONFIG_CPU_IDLE_STOP_IDLE_DURING_HOTPLUG
+/* during hotplug out in progress, disable cpuidle for faster hotplug out */
+static int exynos_cpuidle_hotcpu_callback(struct notifier_block *nfb,
+					unsigned long action, void *hcpu)
+{
+	unsigned int cpu = (unsigned long)hcpu;
+	struct cpuidle_device *dev = per_cpu(cpuidle_devices, cpu);
+
+	if (dev) {
+		switch (action) {
+		case CPU_ONLINE:
+			cpuidle_enable_device(dev);
+			break;
+
+		case CPU_DOWN_PREPARE:
+			cpuidle_disable_device(dev);
+			break;
+
+		case CPU_DOWN_FAILED:
+			cpuidle_enable_device(dev);
+			break;
+		}
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block __refdata cpuidle_hotcpu_notifier = {
+	.notifier_call = exynos_cpuidle_hotcpu_callback,
+	.priority = INT_MAX,	/* want to be called first */
+};
+
+static int __init cpuidle_hotcpu_init(void)
+{
+	register_hotcpu_notifier(&cpuidle_hotcpu_notifier);
+
+	return 0;
+}
+device_initcall(cpuidle_hotcpu_init);
+#endif
 
 /**
  * cpuidle_init - core initializer

@@ -43,6 +43,7 @@
  */
 #define VA_BITS			(CONFIG_ARM64_VA_BITS)
 #define PAGE_OFFSET		(UL(0xffffffffffffffff) << (VA_BITS - 1))
+#define PAGE_OFFSET_COHERENT	(UL(0xffffffffffffffff) << (VA_BITS - 2))
 #define MODULES_END		(PAGE_OFFSET)
 #define MODULES_VADDR		(MODULES_END - SZ_64M)
 #define FIXADDR_TOP		(MODULES_VADDR - SZ_2M - PAGE_SIZE)
@@ -71,6 +72,13 @@
  */
 #define __virt_to_phys(x)	(((phys_addr_t)(x) - PAGE_OFFSET + PHYS_OFFSET))
 #define __phys_to_virt(x)	((unsigned long)((x) - PHYS_OFFSET + PAGE_OFFSET))
+
+#define __phys_to_coherent_virt(x) \
+		((unsigned long)((x) - PHYS_OFFSET + PAGE_OFFSET_COHERENT))
+#define __virt_to_coherent_virt(x) \
+		((phys_addr_t)(x) - PAGE_OFFSET + PAGE_OFFSET_COHERENT)
+#define __coherent_virt_to_virt(x) \
+		((phys_addr_t)(x) + PAGE_OFFSET - PAGE_OFFSET_COHERENT)
 
 /*
  * Convert a physical address to a Page Frame Number and back

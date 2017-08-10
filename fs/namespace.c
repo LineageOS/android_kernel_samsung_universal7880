@@ -1306,7 +1306,7 @@ static void namespace_unlock(void)
 
 	up_write(&namespace_sem);
 
-	synchronize_rcu();
+	synchronize_rcu_expedited();
 
 	while (!hlist_empty(&head)) {
 		mnt = hlist_entry(head.first, struct mount, mnt_hash);
@@ -1490,7 +1490,7 @@ void __detach_mounts(struct dentry *dentry)
 
 	namespace_lock();
 	mp = lookup_mountpoint(dentry);
-	if (!mp)
+	if (IS_ERR_OR_NULL(mp))
 		goto out_unlock;
 
 	lock_mount_hash();
@@ -1675,8 +1675,11 @@ struct vfsmount *collect_mounts(struct path *path)
 {
 	struct mount *tree;
 	namespace_lock();
-	tree = copy_tree(real_mount(path->mnt), path->dentry,
-			 CL_COPY_ALL | CL_PRIVATE);
+	if (!check_mnt(real_mount(path->mnt)))
+		tree = ERR_PTR(-EINVAL);
+	else
+		tree = copy_tree(real_mount(path->mnt), path->dentry,
+				CL_COPY_ALL | CL_PRIVATE);
 	namespace_unlock();
 	if (IS_ERR(tree))
 		return ERR_CAST(tree);

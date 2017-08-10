@@ -19,7 +19,7 @@
 
 #include <linux/types.h>
 
-#include "../uapi/ion.h"
+#include <uapi/linux/ion.h>
 
 struct ion_handle;
 struct ion_device;
@@ -76,7 +76,7 @@ struct ion_platform_data {
  *		size
  *
  * Calls memblock reserve to set aside memory for heaps that are
- * located at specific memory addresses or of specfic sizes not
+ * located at specific memory addresses or of specific sizes not
  * managed by the kernel
  */
 void ion_reserve(struct ion_platform_data *data);
@@ -199,5 +199,17 @@ int ion_share_dma_buf_fd(struct ion_client *client, struct ion_handle *handle);
  * another exporter is passed in this function will return ERR_PTR(-EINVAL)
  */
 struct ion_handle *ion_import_dma_buf(struct ion_client *client, int fd);
+
+#include <linux/dma-direction.h>
+#include <linux/dma-buf.h>
+
+dma_addr_t ion_iovmm_map(struct dma_buf_attachment *attachment,
+			 off_t offset, size_t size,
+			 enum dma_data_direction direction,
+			 int iommu_prot);
+void ion_iovmm_unmap(struct dma_buf_attachment *attachment, dma_addr_t iova);
+int ion_secure_protect(struct ion_buffer *buffer);
+int ion_secure_unprotect(struct ion_buffer *buffer);
+bool ion_is_heap_available(struct ion_heap *heap, unsigned long flags, void *data);
 
 #endif /* _LINUX_ION_H */

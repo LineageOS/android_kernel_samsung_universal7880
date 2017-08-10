@@ -20,9 +20,8 @@ config ANDROID_BINDER_IPC
 	  between said processes.
 
 config ANDROID_BINDER_IPC_32BIT
-	bool
-	depends on !64BIT && ANDROID_BINDER_IPC
-	default y
+	bool "Use old 32-bit binder api"
+        default n
 	---help---
 	  The Binder API has been changed to support both 32 and 64bit
 	  applications in a mixed environment.
@@ -75,6 +74,21 @@ config ANDROID_LOW_MEMORY_KILLER
 	---help---
 	  Registers processes to be killed when memory is low
 
+config ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
+	bool "Android Low Memory Killer: detect oom_adj values"
+	depends on ANDROID_LOW_MEMORY_KILLER
+	default y
+	---help---
+	  Detect oom_adj values written to
+	  /sys/module/lowmemorykiller/parameters/adj and convert them
+	  to oom_score_adj values.
+
+config SEC_TIMEOUT_LOW_MEMORY_KILLER
+	bool "Android timeout Low Memory Killer"
+	default n
+	help
+	 This invokes timeout based LMK
+
 config ANDROID_INTF_ALARM_DEV
 	tristate "Android alarm driver"
 	depends on RTC_CLASS
@@ -113,6 +127,8 @@ config SW_SYNC_USER
 	  drivers from userspace.
 
 source "drivers/staging/android/ion/Kconfig"
+
+source "drivers/staging/android/fiq_debugger/Kconfig"
 
 endif # if ANDROID
 

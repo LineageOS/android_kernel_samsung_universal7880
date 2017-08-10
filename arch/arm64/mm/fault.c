@@ -29,6 +29,7 @@
 #include <linux/sched.h>
 #include <linux/highmem.h>
 #include <linux/perf_event.h>
+#include <linux/exynos-ss.h>
 
 #include <asm/exception.h>
 #include <asm/debug-monitors.h>
@@ -36,8 +37,13 @@
 #include <asm/system_misc.h>
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/sec_debug.h>
+#endif
 
+static int safe_fault_in_progress = 0;
 static const char *fault_name(unsigned int esr);
+extern void exynos_ss_panic_handler_safe(struct pt_regs *regs);
 
 /*
  * Dump out the page tables associated with 'addr' in mm 'mm'.
@@ -79,6 +85,19 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 	printk("\n");
 }
 
+static int __do_kernel_fault_safe(struct mm_struct *mm, unsigned long addr,
+		unsigned int esr, struct pt_regs *regs)
+{
+	safe_fault_in_progress = 0xFAFADEAD;
+
+	exynos_ss_panic_handler_safe(regs);
+	exynos_ss_printkl(safe_fault_in_progress,safe_fault_in_progress);
+	while(1)
+		wfi();
+
+	return 0;
+}
+
 /*
  * The kernel tried to access some page that wasn't present.
  */
@@ -90,12 +109,21 @@ static void __do_kernel_fault(struct mm_struct *mm, unsigned long addr,
 	 */
 	if (fixup_exception(regs))
 		return;
+	if (safe_fault_in_progress) {
+		exynos_ss_printkl(safe_fault_in_progress, safe_fault_in_progress);
+		return;
+	}
 
 	/*
 	 * No handler, we'll have to terminate things with extreme prejudice.
 	 */
 	bust_spinlocks(1);
-	pr_alert("Unable to handle kernel %s at virtual address %08lx\n",
+
+#ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
+	sec_debug_set_extra_info_fault(addr, regs);
+#endif
+
+	pr_auto(ASL1, "Unable to handle kernel %s at virtual address %08lx\n",
 		 (addr < PAGE_SIZE) ? "NULL pointer dereference" :
 		 "paging request", addr);
 
@@ -279,6 +307,7 @@ retry:
 			 * starvation.
 			 */
 			mm_flags &= ~FAULT_FLAG_ALLOW_RETRY;
+			mm_flags |= FAULT_FLAG_TRIED;
 			goto retry;
 		}
 	}
@@ -355,6 +384,10 @@ static int __kprobes do_translation_fault(unsigned long addr,
 					  unsigned int esr,
 					  struct pt_regs *regs)
 {
+	/* We may have invalid '*current' due to a stack overflow. */
+	if (!virt_addr_valid(current_thread_info()) || !virt_addr_valid(current))
+		__do_kernel_fault_safe(NULL, addr, esr, regs);
+
 	if (addr < TASK_SIZE)
 		return do_page_fault(addr, esr, regs);
 
@@ -460,8 +493,12 @@ asmlinkage void __exception do_mem_abort(unsigned long addr, unsigned int esr,
 	if (!inf->fn(addr, esr, regs))
 		return;
 
-	pr_alert("Unhandled fault: %s (0x%08x) at 0x%016lx\n",
-		 inf->name, esr, addr);
+	pr_auto(ASL1, "Unhandled fault: %s (0x%08x) at 0x%016lx -- %s\n",
+		 inf->name, esr, addr, esr_get_class_string(esr));
+
+#ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
+	sec_debug_set_extra_info_fault(addr, regs);
+#endif
 
 	info.si_signo = inf->sig;
 	info.si_errno = 0;
@@ -478,6 +515,13 @@ asmlinkage void __exception do_sp_pc_abort(unsigned long addr,
 					   struct pt_regs *regs)
 {
 	struct siginfo info;
+
+#ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
+	if (!user_mode(regs)) {
+		sec_debug_set_extra_info_fault(addr, regs);
+		sec_debug_set_extra_info_esr(esr);
+	}
+#endif
 
 	info.si_signo = SIGBUS;
 	info.si_errno = 0;

@@ -243,4 +243,11 @@ config BT_WILINK
 	  Say Y here to compile support for Texas Instrument's WiLink7 driver
 	  into the kernel or say M to compile it as module (btwilink).
 
+config BT_QCA9377
+	bool "Enable QCA9377 driver"
+	default n
+	help
+	  Adds QCA9377 RFKILL driver for QCA9377 chipset for exynos54xx.
+	  default is n.
+
 endmenu
