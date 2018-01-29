@@ -6,6 +6,58 @@ dtb-$(CONFIG_SOC_EXYNOS8890) += exynos8890-evt1-smdk8890.dtb
 dtb-$(CONFIG_SOC_EXYNOS7870) += exynos7870-smdk7870.dtb exynos7870-universal7870.dtb
 dtb-$(CONFIG_SOC_EXYNOS7880) += exynos7880-smdk7880.dtb exynos7880-universal7880.dtb exynos7880-universal7880-rev01.dtb
 
+dtb-$(CONFIG_SOC_EXYNOS7880) += \
+	exynos7880-a5y17lte_kor_all_05.dtb \
+	exynos7880-a5y17lte_eur_open_00.dtb \
+	exynos7880-a7y17lte_kor_all_03.dtb \
+	exynos7880-a5y17lte_kor_all_03.dtb \
+	exynos7880-a5y17lte_kor_all_08.dtb \
+	exynos7880-a5y17lte_eur_open_07.dtb \
+	exynos7880-a5y17lte_can_open_01.dtb \
+	exynos7880-universal7880-rev01.dtb \
+	exynos7880-a7y17lte_eur_ldu_01.dtb \
+	exynos7880-a7y17lte_kor_all_00.dtb \
+	exynos7880-a5y17lte_eur_ldu_00.dtb \
+	exynos7880-a5y17lte_eur_open_02.dtb \
+	exynos7880-a5y17lte_eur_ldu_05.dtb \
+	exynos7880-a5y17lte_eur_ldu_01.dtb \
+	exynos7880-a7y17lte_eur_open_02.dtb \
+	exynos7880-a5y17lte_kor_all_01.dtb \
+	exynos7880-a5y17lte_eur_open_01.dtb \
+	exynos7880-a7y17lte_eur_ldu_04.dtb \
+	exynos7880-a5y17lte_eur_ldu_08.dtb \
+	exynos7880-smdk7880.dtb \
+	exynos7880-a5y17lte_can_open_08.dtb \
+	exynos7880-a5y17lte_eur_open_05.dtb \
+	exynos7880-a7y17lte_eur_ldu_00.dtb \
+	exynos7880-a5y17lte_can_open_02.dtb \
+	exynos7880-a5y17lte_kor_all_09.dtb \
+	exynos7880-a5y17lte_eur_open_08.dtb \
+	exynos7880-a7y17lte_eur_open_00.dtb \
+	exynos7880-a7y17lte_kor_all_01.dtb \
+	exynos7880-a5y17lte_can_open_07.dtb \
+	exynos7880-a7y17lte_kor_all_06.dtb \
+	exynos7880-a7y17lte_eur_ldu_06.dtb \
+	exynos7880-a7y17lte_eur_open_06.dtb \
+	exynos7880-a5y17lte_eur_open_03.dtb \
+	exynos7880-a7y17lte_kor_all_02.dtb \
+	exynos7880-a7y17lte_eur_open_04.dtb \
+	exynos7880-a7y17lte_kor_all_04.dtb \
+	exynos7880-a7y17lte_eur_ldu_03.dtb \
+	exynos7880-a5y17lte_eur_ldu_07.dtb \
+	exynos7880-universal7880.dtb \
+	exynos7880-a5y17lte_eur_ldu_02.dtb \
+	exynos7880-a5y17lte_can_open_00.dtb \
+	exynos7880-a5y17lte_can_open_03.dtb \
+	exynos7880-a5y17lte_kor_all_07.dtb \
+	exynos7880-a7y17lte_eur_open_01.dtb \
+	exynos7880-a7y17lte_eur_open_03.dtb \
+	exynos7880-a5y17lte_kor_all_00.dtb \
+	exynos7880-a5y17lte_kor_all_02.dtb \
+	exynos7880-a5y17lte_can_open_05.dtb \
+	exynos7880-a7y17lte_eur_ldu_02.dtb \
+	exynos7880-a5y17lte_eur_ldu_03.dtb
+
 targets += dtbs
 
 DTB_NAMES := $(subst $\",,$(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES))
