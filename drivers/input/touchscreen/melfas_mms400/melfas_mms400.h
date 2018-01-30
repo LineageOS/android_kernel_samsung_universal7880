@@ -275,6 +275,7 @@ struct mms_ts_info {
 	unsigned int wet_count;
 	unsigned int dive_count;
 	unsigned int comm_err_count;	
+	bool dt2w_enable;
 };
 
 enum IC_STATUS{
