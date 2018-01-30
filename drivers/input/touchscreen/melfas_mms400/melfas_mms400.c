@@ -622,6 +622,7 @@ static irqreturn_t mms_interrupt(int irq, void *dev_id)
 	int event_size = info->event_size;
 	u8 category = 0;
 	u8 alert_type = 0;
+	unsigned int keycode;
 
 	if (info->lowpower_mode){
 		pm_wakeup_event(info->input_dev->dev.parent, 1000);
@@ -650,6 +651,7 @@ static irqreturn_t mms_interrupt(int irq, void *dev_id)
 
 			input_info(true, &client->dev, "%s: [Gesture] Spay, flag%x\n",
 						__func__, info->lowpower_flag);
+			keycode = KEY_BLACK_UI_GESTURE;
 		} else if(alert_type & MMS_LPM_FLAG_AOD) {
 			info->scrub_id = SPONGE_EVENT_TYPE_AOD_DOUBLETAB;
 
@@ -660,6 +662,7 @@ static irqreturn_t mms_interrupt(int irq, void *dev_id)
 				goto ERROR;
 			}
 
+			keycode = info->dt2w_enable ? KEY_POWER : KEY_BLACK_UI_GESTURE;
 			input_info(true, &client->dev, "%s - double tap event(%x, %x, %x, %x)", __func__, rbuf[0], rbuf[1],rbuf[2],rbuf[3]);
 
 			info->scrub_x = ((rbuf[0] & 0xFF) << 0) | ((rbuf[1] & 0xFF) << 8);
@@ -674,9 +677,9 @@ static irqreturn_t mms_interrupt(int irq, void *dev_id)
 			input_err(true, &client->dev, "%s [ERROR] Read a wrong aot action %x\n", __func__, alert_type);
 			return IRQ_HANDLED;
 		}
-		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
+		input_report_key(info->input_dev, keycode, 1);
 		input_sync(info->input_dev);
-		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 0);
+		input_report_key(info->input_dev, keycode, 0);
 		input_sync(info->input_dev);
 		return IRQ_HANDLED;
 	}

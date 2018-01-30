@@ -1601,6 +1601,54 @@ static ssize_t read_module_id_show(struct device *dev,
 					info->core_ver_ic, info->config_ver_ic);	
 }
 
+static ssize_t mms_sys_dt2w_enable_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct mms_ts_info *info = dev_get_drvdata(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", info->dt2w_enable);
+}
+
+static ssize_t mms_sys_dt2w_enable_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct mms_ts_info *info = dev_get_drvdata(dev);
+	bool enable;
+
+	if (count < 1)
+		return -EINVAL;
+
+	enable = buf[0] == '1';
+
+	if (!info->enabled) {
+		return -EINVAL;
+	}
+
+	if (enable == info->dt2w_enable)
+		return 0;
+
+	mutex_lock(&info->lock);
+	info->cmd_busy = true;
+	mutex_unlock(&info->lock);
+
+	if (enable) {
+		info->lowpower_mode = true;
+		info->lowpower_flag |= MMS_LPM_FLAG_AOD;
+		info->dt2w_enable = true;
+	} else {
+		info->lowpower_flag &= ~MMS_LPM_FLAG_AOD;
+		if (!info->lowpower_flag)
+			info->lowpower_mode = false;
+		info->dt2w_enable = false;
+	}
+
+	mutex_lock(&info->lock);
+	info->cmd_busy = false;
+	mutex_unlock(&info->lock);
+	return 0;
+}
+
+static DEVICE_ATTR(dt2w_enable, 0660, mms_sys_dt2w_enable_show, mms_sys_dt2w_enable_store);
 static DEVICE_ATTR(ito_check, S_IRUGO, read_ito_check_show, NULL);
 static DEVICE_ATTR(raw_check, S_IRUGO, read_raw_check_show, NULL);
 static DEVICE_ATTR(multi_count, S_IRUGO, read_multi_count_show, NULL);
@@ -1617,6 +1665,7 @@ static struct attribute *mms_cmd_attr[] = {
 	&dev_attr_cmd_result.attr,
 	&dev_attr_cmd_list.attr,
 	&dev_attr_scrub_pos.attr,
+	&dev_attr_dt2w_enable.attr,
 	&dev_attr_ito_check.attr,
 	&dev_attr_raw_check.attr,
 	&dev_attr_multi_count.attr,
