@@ -774,6 +774,7 @@ struct bt532_ts_info {
 	unsigned int wet_count;
 	unsigned int dive_count;
 	unsigned int comm_err_count;	
+	bool dt2w_enable;
 };
 /* Dummy touchkey code */
 #define KEY_DUMMY_HOME1	249
@@ -1214,6 +1215,7 @@ static bool ts_read_coord(struct bt532_ts_info *info)
 	int retry_cnt;
 	u16* u16_point_info;
 	int i;
+	unsigned int aod_keycode;
 
 	/* zinitix_debug_msg("ts_read_coord+\r\n"); */
 
@@ -1318,9 +1320,10 @@ static bool ts_read_coord(struct bt532_ts_info *info)
 			if (read_data(info->client, ZT75XX_GET_AOD_Y_REG, (u8 *)&info->scrub_y, 2) < 0)
 				input_info(true, &client->dev, "aod_y_reg read fail\n");
 
-			input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
+			aod_keycode = info->dt2w_enable ? KEY_POWER : KEY_BLACK_UI_GESTURE;
+			input_report_key(info->input_dev, aod_keycode, 1);
 			input_sync(info->input_dev);
-			input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 0);
+			input_report_key(info->input_dev, aod_keycode, 0);
 			input_sync(info->input_dev);
 		}
 	}
@@ -6586,12 +6589,67 @@ static ssize_t read_module_id_show(struct device *dev,
 					info->cap_info.cal_count, info->cap_info.tune_fix_ver);
 }
 
+static ssize_t dt2w_enable_show(struct device *dev, 
+					struct device_attribute *devattr, char *buf)
+{
+	struct bt532_ts_info *info = dev_get_drvdata(dev);
+	char buffer[256]= { 0 };
+
+	input_info(true, &info->client->dev, "%s: %d\n", __func__, info->dt2w_enable);
+	snprintf(buffer, sizeof(buffer), "%d", info->dt2w_enable);
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", buffer);
+}
+
+static ssize_t dt2w_enable_store(struct device *dev, struct device_attribute *attr,
+					const char *buf, size_t size)
+{
+	struct bt532_ts_info *info = dev_get_drvdata(dev);
+	struct tsp_factory_info *finfo = info->factory_info;
+	bool enable;
+
+	if (strncmp(buf, "1", 1) == 0)
+		enable = true;
+	else if (strncmp(buf, "0", 1) == 0)
+		enable = false;
+	else
+		return 0;
+
+	input_info(true, &info->client->dev, "%s: %d\n", __func__, enable);
+
+	mutex_lock(&finfo->cmd_lock);
+	finfo->cmd_is_running = true;
+	mutex_unlock(&finfo->cmd_lock);
+
+	info->dt2w_enable = enable ? 1 : 0;
+	info->aod_enable = enable ? 1 : 0;
+
+	if (enable) {
+		write_cmd(info->client, 0x0A);
+		write_reg(info->client, ZT75XX_SET_AOD_W_REG, info->cap_info.MaxX);
+		write_reg(info->client, ZT75XX_SET_AOD_H_REG, info->cap_info.MaxY);
+		write_reg(info->client, ZT75XX_SET_AOD_X_REG, 0);
+		write_reg(info->client, ZT75XX_SET_AOD_Y_REG, 0);
+		write_cmd(info->client, 0x0B);
+		zinitix_bit_set(lpm_mode_reg.flag, BIT_EVENT_AOD);
+	} else {
+		zinitix_bit_clr(lpm_mode_reg.flag, BIT_EVENT_AOD);
+	}
+
+	mutex_lock(&finfo->cmd_lock);
+	finfo->cmd_is_running = false;
+	mutex_unlock(&finfo->cmd_lock);
+
+	return size;
+}
+
 static DEVICE_ATTR(ito_check, S_IRUGO, read_ito_check_show, NULL);
 static DEVICE_ATTR(raw_check, S_IRUGO, read_raw_check_show, NULL);
 static DEVICE_ATTR(multi_count, S_IRUGO, read_multi_count_show, NULL);
 static DEVICE_ATTR(wet_mode, S_IRUGO, read_wet_mode_show, NULL);
 static DEVICE_ATTR(comm_err_count, S_IRUGO, read_comm_err_count_show, NULL);
 static DEVICE_ATTR(module_id, S_IRUGO, read_module_id_show, NULL);
+static DEVICE_ATTR(dt2w_enable, 0660, dt2w_enable_show, dt2w_enable_store);
 
 static struct attribute *touchscreen_attributes[] = {
 	&dev_attr_cmd.attr,
@@ -6604,6 +6662,7 @@ static struct attribute *touchscreen_attributes[] = {
 	&dev_attr_wet_mode.attr,
 	&dev_attr_comm_err_count.attr,
 	&dev_attr_module_id.attr,
+	&dev_attr_dt2w_enable.attr,
 	NULL,
 };
 
@@ -7631,6 +7690,7 @@ static int bt532_ts_probe(struct i2c_client *client,
 
 	if(pdata->support_lpm_mode){
 		set_bit(KEY_BLACK_UI_GESTURE, info->input_dev->keybit);
+		set_bit(KEY_POWER, info->input_dev->keybit);
 	}
 
 	input_set_abs_params(info->input_dev, ABS_MT_POSITION_X,
