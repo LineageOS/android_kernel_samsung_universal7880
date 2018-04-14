@@ -86,6 +86,7 @@ union sec_debug_level_t {
 
 enum sec_debug_extra_buf_type {
 	INFO_KTIME,
+	INFO_BIN,
 	INFO_FAULT,
 	INFO_BUG,
 	INFO_PANIC,

@@ -2186,7 +2186,7 @@ int fimc_is_interface_probe(struct fimc_is_interface *this,
 	init_waitqueue_head(&this->idle_wait_queue);
 	spin_lock_init(&this->shot_check_lock);
 
-	this->workqueue = alloc_workqueue("fimc-is/highpri", WQ_HIGHPRI, 0);
+	this->workqueue = alloc_workqueue("fimc-is/[H/U]", WQ_HIGHPRI | WQ_UNBOUND, 0);
 	if (!this->workqueue)
 		probe_warn("failed to alloc own workqueue, will be use global one");
 

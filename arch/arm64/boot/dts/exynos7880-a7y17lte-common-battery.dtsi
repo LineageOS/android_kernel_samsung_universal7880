@@ -45,7 +45,7 @@
 			fuelgauge,fuel_alert_soc = <1>;
 			fuelgauge,fuel_alert_vol = <3300>;
 			fuelgauge,capacity_max = <1000>;
-			fuelgauge,capacity_max_margin = <70>;
+			fuelgauge,capacity_max_margin = <200>;
 			fuelgauge,capacity_min = <0>;
 			fuelgauge,capacity_calculation_type = <28>;
 			fuelgauge,capacity_full = <3600>;

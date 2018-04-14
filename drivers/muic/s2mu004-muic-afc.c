@@ -511,7 +511,7 @@ static void s2mu004_hv_muic_set_afc_after_prepare
 	s2mu004_hv_muic_write_reg(muic_data->i2c, 0x5f, 0x05);
 	s2mu004_hv_muic_write_reg(muic_data->i2c, 0x4A, 0x0e);
 	schedule_delayed_work(&muic_data->afc_send_mpnack, msecs_to_jiffies(2000));
-	schedule_delayed_work(&muic_data->afc_control_ping_retry, msecs_to_jiffies(50));
+	schedule_delayed_work(&muic_data->afc_control_ping_retry, msecs_to_jiffies(90));
 }
 
 void s2mu004_muic_afc_after_prepare(struct work_struct *work)
@@ -553,7 +553,7 @@ static void s2mu004_muic_afc_control_ping_retry(struct work_struct *work)
 	if (muic_data->retry_cnt <  RETRY_PING_CNT) {
 		muic_data->retry_cnt++;
 		s2mu004_hv_muic_write_reg(muic_data->i2c, 0x4A, 0x0e);
-		schedule_delayed_work(&muic_data->afc_control_ping_retry, msecs_to_jiffies(50));
+		schedule_delayed_work(&muic_data->afc_control_ping_retry, msecs_to_jiffies(90));
 	} else {
 		muic_data->retry_cnt = 0;
 		s2mu004_mpnack_irq_mask(muic_data, 1); /* enable mpnack irq */
@@ -569,10 +569,12 @@ static void s2mu004_hv_muic_afc_control_ping
 	pr_err("%s:%s control ping[%d, %c]\n", MUIC_HV_DEV_NAME, __func__,
 				muic_data->afc_count, ping_continue ? 'T' : 'F');
 	if (ping_continue) {
+		cancel_delayed_work(&muic_data->afc_control_ping_retry);
+		cancel_delayed_work(&muic_data->afc_send_mpnack);
 		msleep(30);
 		ret = s2mu004_hv_muic_write_reg(muic_data->i2c, 0x4A, 0x0e); //3
 		schedule_delayed_work(&muic_data->afc_send_mpnack, msecs_to_jiffies(2000));
-		schedule_delayed_work(&muic_data->afc_control_ping_retry, msecs_to_jiffies(50));
+		schedule_delayed_work(&muic_data->afc_control_ping_retry, msecs_to_jiffies(90));
 	}
 }
 
@@ -673,6 +675,7 @@ static int s2mu004_hv_muic_handle_attach
 		break;
 	case FUNC_PREPARE_DUPLI_TO_AFC_9V:
 		s2mu004_hv_muic_afc_control_ping(muic_data, false);
+		cancel_delayed_work(&muic_data->afc_control_ping_retry);
 	//	muic_data->afc_count = 0;
 		break;
 	case FUNC_AFC_5V_TO_AFC_5V_DUPLI:
@@ -767,12 +770,8 @@ static int s2mu004_hv_muic_handle_attach
 		} else {
 			pr_info("dummy int called [%d]\n", muic_data->afc_count);
 		}
-#else
-		muic_data->afc_count++;
-		if (muic_data->afc_count < AFC_CHARGER_WA_PING) {
-			s2mu004_hv_muic_afc_control_ping(muic_data, true);
-		}
 #endif
+		cancel_delayed_work(&muic_data->afc_control_ping_retry);
 		break;
 #if 0 /* remove qc */
 	case FUNC_QC_PREPARE_TO_QC_5V:
