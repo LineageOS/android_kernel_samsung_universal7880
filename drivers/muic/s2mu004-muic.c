@@ -69,6 +69,10 @@
 #include <mach/pinctrl-samsung.h>
 #endif
 
+#ifdef CONFIG_SEC_PARAM
+#include <linux/sec_ext.h>
+#endif
+
 #define GPIO_LEVEL_HIGH		1
 #define GPIO_LEVEL_LOW		0
 
@@ -1065,7 +1069,7 @@ static ssize_t s2mu004_muic_set_afc_disable(struct device *dev,
 
 	param_val = pdata->afc_disable ? '1' : '0';
 
-#ifdef CM_OFFSET
+#ifdef CONFIG_SEC_PARAM
 	if ((ret = sec_set_param(CM_OFFSET + 1, (char)param_val)) < 0) {
 		pr_err("%s:set_param failed - %02x:%02x(%d)\n", __func__,
 				param_val, curr_val, ret);

@@ -442,13 +442,6 @@ int s5p_mfc_wakeup(struct s5p_mfc_dev *dev)
 	s5p_mfc_clock_on(dev);
 
 	dev->wakeup_status = 0;
-	/* SYSMMU default block mode (not enalble/disable) */
-	if (dev->curr_ctx_drm) {
-		ret = s5p_mfc_mem_resume(dev->alloc_ctx);
-		if (ret < 0)
-			mfc_err_dev("Failed to attach iommu\n");
-		s5p_mfc_mem_suspend(dev->alloc_ctx);
-	}
 
 	ret = s5p_mfc_reset(dev);
 	if (ret) {

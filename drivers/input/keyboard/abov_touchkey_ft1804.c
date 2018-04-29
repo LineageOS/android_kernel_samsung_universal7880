@@ -398,6 +398,7 @@ static int read_window_type(void)
 			sizeof(window_type), &type_filp->f_pos);
 	if (ret != 2 * sizeof(char)) {
 		pr_err("%s touchkey %s: fd read fail\n", SECLOG, __func__);
+		set_fs(old_fs);
 		ret = -EIO;
 		return ret;
 	}

@@ -2195,8 +2195,6 @@ static void dw_mci_request_end(struct dw_mci *host, struct mmc_request *mrq)
 
 static int dw_mci_command_complete(struct dw_mci *host, struct mmc_command *cmd)
 {
-	struct dw_mci_slot *slot = host->cur_slot;
-	struct mmc_card *card = slot->mmc->card;
 	u32 status = host->cmd_status;
 
 	host->cmd_status = 0;
@@ -2226,12 +2224,6 @@ static int dw_mci_command_complete(struct dw_mci *host, struct mmc_command *cmd)
 		cmd->error = 0;
 
 	if (cmd->error) {
-		if (card ) {
-			printk("%s: CMD command %d : %d, status = %#x\n",
-					mmc_hostname(host->cur_slot->mmc),
-					cmd->opcode, cmd->error, status);
-		}
-
 		/* newer ip versions need a delay between retries */
 		if (host->quirks & DW_MCI_QUIRK_RETRY_DELAY)
 			mdelay(20);

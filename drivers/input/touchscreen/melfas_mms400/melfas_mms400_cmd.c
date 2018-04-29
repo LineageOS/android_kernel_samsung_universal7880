@@ -1306,6 +1306,12 @@ static ssize_t mms_sys_cmd(struct device *dev, struct device_attribute *devattr,
 		return ret;
 	}
 
+	if (count >= (unsigned int)CMD_LEN) {
+		input_err(true, &info->client->dev, "%s: cmd length(count) is over (%s,%d)!!\n", __func__, buf, (unsigned int)count); 
+		ret = -EINVAL;
+		goto ERROR; 
+	}
+
 	input_dbg(false, &info->client->dev, "%s [START]\n", __func__);
 	input_dbg(false, &info->client->dev, "%s - input [%s]\n", __func__, buf);
 

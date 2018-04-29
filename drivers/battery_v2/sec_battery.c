@@ -831,7 +831,8 @@ static int sec_bat_set_charging_current(struct sec_battery_info *battery)
 
 		/* check topoff current */
 		if (battery->charging_mode == SEC_BATTERY_CHARGING_2ND &&
-			battery->pdata->full_check_type_2nd == SEC_BATTERY_FULLCHARGED_CHGPSY) {
+			((battery->pdata->full_check_type_2nd == SEC_BATTERY_FULLCHARGED_CHGPSY) ||
+			(battery->pdata->full_check_type_2nd == SEC_BATTERY_FULLCHARGED_FG_CURRENT))) {
 			topoff_current =
 				battery->pdata->charging_current[battery->cable_type].full_check_current_2nd;
 		}
@@ -2591,8 +2592,12 @@ static bool sec_bat_check_fullcharged(
 
 	case SEC_BATTERY_FULLCHARGED_FG_CURRENT:
 		if ((battery->current_now > 0 && battery->current_now <
+			(battery->charging_mode ==
+			SEC_BATTERY_CHARGING_1ST ?
 			battery->pdata->charging_current[
-			battery->cable_type].full_check_current_1st) &&
+			battery->cable_type].full_check_current_1st :
+			battery->pdata->charging_current[
+			battery->cable_type].full_check_current_2nd)) &&
 			(battery->current_avg > 0 && battery->current_avg <
 			(battery->charging_mode ==
 			SEC_BATTERY_CHARGING_1ST ?
@@ -4488,7 +4493,7 @@ ssize_t sec_bat_show_attrs(struct device *dev,
 				check_val = 2;
 			else if (is_hv_wire_type(battery->cable_type) ||
 				battery->cable_type == POWER_SUPPLY_TYPE_HV_MAINS_CHG_LIMIT ||
-				battery->max_charge_power >= 15000)
+				battery->max_charge_power >= 12000)
 				check_val = 1;
 
 			i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", check_val);

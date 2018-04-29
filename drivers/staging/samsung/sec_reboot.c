@@ -103,6 +103,9 @@ static void sec_power_off(void)
 			pr_emerg("%s: charger connected() or power"
 			     "off failed(%d), reboot!\n",
 			     __func__, poweroff_try);
+#ifdef CONFIG_SEC_DEBUG
+			sec_debug_reboot_handler();
+#endif
 			/* To enter LP charging */
 			exynos_pmu_write(EXYNOS_INFORM2, SEC_POWER_OFF);
 
@@ -117,6 +120,10 @@ static void sec_power_off(void)
 		/* wait for power button release */
 		if (gpio_get_value(powerkey_gpio)) {
 			pr_emerg("%s: set PS_HOLD low\n", __func__);
+#ifdef CONFIG_SEC_DEBUG
+			sec_debug_reboot_handler();
+			flush_cache_all();
+#endif
 
 			/* power off code
 			 * PS_HOLD Out/High -->

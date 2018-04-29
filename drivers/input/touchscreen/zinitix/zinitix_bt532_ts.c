@@ -6368,6 +6368,11 @@ static ssize_t store_cmd(struct device *dev, struct device_attribute
 		goto err_out;
 	}
 
+	if (count >= (unsigned int)TSP_CMD_STR_LEN) {
+		input_err(true, &client->dev, "%s: cmd length(count) is over (%s,%d)!!\n", __func__, buf, (unsigned int)count);
+		goto err_out;
+	}
+
 	/* check lock  */
 	mutex_lock(&finfo->cmd_lock);
 	finfo->cmd_is_running = true;
@@ -7534,7 +7539,6 @@ static int bt532_ts_probe(struct i2c_client *client,
 	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
 	struct bt532_ts_platform_data *pdata = client->dev.platform_data;
 	struct bt532_ts_info *info;
-	struct input_dev *input_dev;
 	struct device_node *np = client->dev.of_node;
 	int ret = 0;
 	int i;
@@ -7585,8 +7589,8 @@ static int bt532_ts_probe(struct i2c_client *client,
 	info->client = client;
 	info->pdata = pdata;
 
-	input_dev = input_allocate_device();
-	if (!input_dev) {
+	info->input_dev = input_allocate_device();
+	if (!info->input_dev) {
 		input_err(true, &client->dev, "Failed to allocate input device\n");
 		ret = -ENOMEM;
 		goto err_alloc;
@@ -7599,7 +7603,6 @@ static int bt532_ts_probe(struct i2c_client *client,
 		goto err_get_pinctrl;
 	}
 
-	info->input_dev = input_dev;
 	info->work_state = PROBE;
 
 	// power on
@@ -7661,13 +7664,13 @@ static int bt532_ts_probe(struct i2c_client *client,
 	}
 	snprintf(info->phys, sizeof(info->phys),
 		"%s/input0", dev_name(&client->dev));
-	input_dev->name = "sec_touchscreen";
-	input_dev->id.bustype = BUS_I2C;
-/*	input_dev->id.vendor = 0x0001; */
-	input_dev->phys = info->phys;
-/*	input_dev->id.product = 0x0002; */
-/*	input_dev->id.version = 0x0100; */
-	input_dev->dev.parent = &client->dev;
+	info->input_dev->name = "sec_touchscreen";
+	info->input_dev->id.bustype = BUS_I2C;
+/*	info->input_dev->id.vendor = 0x0001; */
+	info->input_dev->phys = info->phys;
+/*	info->input_dev->id.product = 0x0002; */
+/*	info->input_dev->id.version = 0x0100; */
+	info->input_dev->dev.parent = &client->dev;
 
 	set_bit(EV_SYN, info->input_dev->evbit);
 	set_bit(EV_KEY, info->input_dev->evbit);
@@ -7760,8 +7763,8 @@ static int bt532_ts_probe(struct i2c_client *client,
 #endif
 
 #ifdef CONFIG_INPUT_ENABLED
-	input_dev->open = bt532_ts_open;
-	input_dev->close = bt532_ts_close;
+	info->input_dev->open = bt532_ts_open;
+	info->input_dev->close = bt532_ts_close;
 #endif
 
 #if defined(CONFIG_PM_RUNTIME)
@@ -7825,8 +7828,8 @@ err_esd_sequence:
 #endif
 err_power_sequence:
 	bt532_power_control(info, POWER_OFF);
-	input_free_device(info->input_dev);
 err_get_pinctrl:
+	input_free_device(info->input_dev);
 err_alloc:
 	kfree(info);
 err_gpio_request:

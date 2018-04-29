@@ -177,18 +177,17 @@ struct mdnie_info {
 	struct rgb_info		wrgb_current;
 	struct rgb_info		wrgb_default;
 	struct rgb_info		wrgb_balance;
+	struct rgb_info		wrgb_ldu;
 
 	unsigned int disable_trans_dimming;
 	unsigned int night_mode_level;
+	unsigned int ldu;
 
 	struct mdnie_table table_buffer;
 	mdnie_t sequence_buffer[256];
 };
 
-extern int mdnie_calibration(int *r);
-extern int mdnie_open_file(const char *path, char **fp);
 extern int mdnie_register(struct device *p, void *data, mdnie_w w, mdnie_r r, unsigned int *coordinate, struct mdnie_tune *tune);
-extern uintptr_t mdnie_request_table(char *path, struct mdnie_table *s);
 extern ssize_t attr_store_for_each(struct class *cls, const char *name, const char *buf, size_t size);
 extern struct class *get_mdnie_class(void);
 

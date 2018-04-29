@@ -25,6 +25,7 @@
 struct sec_debug_panic_extra_info sec_debug_extra_info_init = {
 	.item = {
 		{"KTIME",	"", SZ_8},
+		{"BIN",		"", SZ_16},
 		{"FAULT",	"", SZ_32},
 		{"BUG",		"", SZ_64},
 		{"PANIC",	"", SZ_96},

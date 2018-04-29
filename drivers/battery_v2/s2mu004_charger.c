@@ -600,6 +600,14 @@ static bool s2mu004_chg_init(struct s2mu004_charger_data *charger)
 	s2mu004_read_reg(charger->i2c, S2MU004_CHG_CTRL12, &temp);
 	pr_info("%s : S2MU004_CHG_CTRL12 : 0x%x\n", __func__, temp);
 
+	/*
+	 * Disable auto-restart charging feature.
+	 * Prevent charging restart after top-off timer expires
+	 */
+	s2mu004_update_reg(charger->i2c, S2MU004_CHG_CTRL7, 0x0 << 7, EN_CHG_RESTART_MASK);
+	s2mu004_read_reg(charger->i2c, S2MU004_CHG_CTRL7, &temp);
+	pr_info("%s : S2MU004_CHG_CTRL7 : 0x%x\n", __func__, temp);
+
 	return true;
 }
 

@@ -916,6 +916,9 @@ static void mmc_card_error_logging(struct mmc_card *card, struct mmc_blk_request
 	int error = 0;
 	err_log = card->err_log;
 
+	if(!brq)
+		return;
+
 	if (status & STATUS_MASK || brq->stop.resp[0] & STATUS_MASK)
 	{
 		if(status & R1_ERROR || brq->stop.resp[0] & R1_ERROR)
@@ -930,8 +933,6 @@ static void mmc_card_error_logging(struct mmc_card *card, struct mmc_blk_request
 			err_log[index].oor_cnt++;	
 	}
 
-	if(!brq)
-		return;
 	if (brq->sbc.error)
 		mmc_error_count_log(card, index, brq->sbc.error, status);
 	if (brq->cmd.error) {
@@ -965,6 +966,8 @@ static ssize_t error_count_show(struct device *dev,
 	struct mmc_card_error_log *err_log;
 	int total_len = 0;
 	int i = 0;
+	u64 total_c_cnt = 0;
+	u64 total_t_cnt = 0;
 
 	disk = dev_to_disk(dev);
 
@@ -992,6 +995,18 @@ static ssize_t error_count_show(struct device *dev,
 				err_log[i].last_issue_time,
 				err_log[i].count);
 	}
+
+	for (i = 0; i < 6; i++) {
+		if (err_log[i].err_type == -EILSEQ && total_c_cnt < MAX_CNT_U64)
+			total_c_cnt += err_log[i].count;
+		if (err_log[i].err_type == -ETIMEDOUT && total_t_cnt < MAX_CNT_U64)
+			total_t_cnt += err_log[i].count;
+	}
+
+	total_len += snprintf(buf + total_len, PAGE_SIZE,
+						   "GE:%d,CC:%d,ECC:%d,WP:%d,OOR:%d,CRC:%lld,TMO:%lld\n",
+						   err_log[0].ge_cnt, err_log[0].cc_cnt, err_log[0].ecc_cnt,
+						   err_log[0].wp_cnt, err_log[0].oor_cnt, total_c_cnt, total_t_cnt);
 
  out:
 	return total_len;
@@ -1080,7 +1095,7 @@ static int card_busy_detect(struct mmc_card *card, unsigned int timeout_ms,
 	int err = 0;
 	u32 status;
 	struct mmc_queue_req *mq_mrq;
-	struct mmc_blk_request *brq;
+	struct mmc_blk_request *brq = NULL;
 
 	if (card->host->areq) {
 		mq_mrq = container_of(card->host->areq, struct mmc_queue_req,
@@ -1099,8 +1114,15 @@ static int card_busy_detect(struct mmc_card *card, unsigned int timeout_ms,
 		if (status & CMD_ERRORS) {
 			pr_err("%s: %s: command error reported, status %#x\n",
 					req->rq_disk->disk_name, __func__, status);
-			if (!(status & R1_WP_VIOLATION))
+
+			if (mmc_card_sd(card))
 				*gen_err |= MMC_BLK_GEN_CMD_ERR;
+			else {
+				if (!(status & R1_WP_VIOLATION) && brq)
+					*gen_err |= MMC_BLK_GEN_CMD_ERR;
+			}
+
+			mmc_card_error_logging(card, brq, status);		
 			if ((R1_CURRENT_STATE(status) == R1_STATE_RCV) ||
 					(R1_CURRENT_STATE(status) == R1_STATE_DATA)) {
 				err = send_stop_raw(card, &status);
@@ -1319,6 +1341,7 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 
 		if (stop_status & R1_CARD_ECC_FAILED)
 			*ecc_err = 1;
+		mmc_card_error_logging(card, brq, stop_status);
 	}
 
 	/* Check for set block count errors */
@@ -1612,7 +1635,9 @@ static int mmc_blk_err_check(struct mmc_card *card,
 
 		if (rq_data_dir(req) == READ) {
 			if (ecc_err)
-				return MMC_BLK_ABORT;
+				return MMC_BLK_ABORT; /* no retry for ECC error */
+			if (mmc_card_sd(card))
+				return MMC_BLK_ABORT; /* no retry for sd read data error */
 			return MMC_BLK_DATA_ERR;
 		} else {
 			return MMC_BLK_CMD_ERR;

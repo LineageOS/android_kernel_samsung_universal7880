@@ -34,6 +34,21 @@
 
 #include "ion.h"
 
+struct exynos_ion_platform_heap {
+	struct ion_platform_heap heap_data;
+	struct reserved_mem *rmem;
+	unsigned int id;
+	unsigned int compat_ids;
+	bool secure;
+	bool reusable;
+	bool protected;
+	bool noprot;
+	bool should_isolate;
+	atomic_t secure_ref;
+	struct device dev;
+	struct ion_heap *heap;
+};
+
 struct ion_buffer *ion_handle_buffer(struct ion_handle *handle);
 
 struct ion_iovm_map {

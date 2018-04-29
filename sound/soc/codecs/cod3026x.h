@@ -101,6 +101,7 @@ struct cod3026x_priv {
 	int btn_press_delay;
 	int water_threshold_adc_min1;
 	int water_threshold_adc_min2;
+	int water_threshold_adc_max;
 	struct jack_buttons_zone jack_buttons_zones[4];
 	struct delayed_work buttons_work;
 	struct workqueue_struct *buttons_wq;
@@ -119,6 +120,7 @@ struct cod3026x_priv {
 	struct delayed_work water_det_polling_work;
 	struct workqueue_struct *water_det_polling_wq;
 	int adc_pin;
+	struct wake_lock jack_wake_lock;
 };
 
 /*

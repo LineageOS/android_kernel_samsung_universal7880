@@ -38,6 +38,7 @@
 #include <linux/gfp.h>
 #include <linux/balloon_compaction.h>
 #include <linux/mmu_notifier.h>
+#include <linux/ptrace.h>
 
 #include <asm/tlbflush.h>
 
@@ -1147,6 +1148,15 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 				rc = unmap_and_move(get_new_page, put_new_page,
 						private, page, pass > 2, mode);
 
+			if ((reason == MR_CMA) && (rc != -EAGAIN) &&
+						  (rc != MIGRATEPAGE_SUCCESS)) {
+				phys_addr_t pa = page_to_phys(page);
+
+				pr_err("%s failed(%d): PA%pa,mapcnt%d,cnt%d\n",
+					__func__, rc, &pa,
+					page_mapcount(page), page_count(page));
+			}
+
 			switch(rc) {
 			case -ENOMEM:
 				goto out;
@@ -1477,7 +1487,6 @@ SYSCALL_DEFINE6(move_pages, pid_t, pid, unsigned long, nr_pages,
 		const int __user *, nodes,
 		int __user *, status, int, flags)
 {
-	const struct cred *cred = current_cred(), *tcred;
 	struct task_struct *task;
 	struct mm_struct *mm;
 	int err;
@@ -1501,14 +1510,9 @@ SYSCALL_DEFINE6(move_pages, pid_t, pid, unsigned long, nr_pages,
 
 	/*
 	 * Check if this process has the right to modify the specified
-	 * process. The right exists if the process has administrative
-	 * capabilities, superuser privileges or the same
-	 * userid as the target process.
+	 * process. Use the regular "ptrace_may_access()" checks.
 	 */
-	tcred = __task_cred(task);
-	if (!uid_eq(cred->euid, tcred->suid) && !uid_eq(cred->euid, tcred->uid) &&
-	    !uid_eq(cred->uid,  tcred->suid) && !uid_eq(cred->uid,  tcred->uid) &&
-	    !capable(CAP_SYS_NICE)) {
+	if (!ptrace_may_access(task, PTRACE_MODE_READ_REALCREDS)) {
 		rcu_read_unlock();
 		err = -EPERM;
 		goto out;

@@ -1114,6 +1114,13 @@ static long  mtpg_ioctl(struct file *fd, unsigned int code, unsigned long arg)
 		size = buf[0];
 		printk(KERN_DEBUG "[%s]SET_SETUP_DATA size=%d line=[%d]\n",
 						 __func__, size, __LINE__);
+						 
+		if (size < 0) {
+			status = -EIO;
+			printk(KERN_ERR "[%s]\t%d:size is negative\n",
+							 __func__, __LINE__);
+			break;
+		}				 
 
 		if ( size > USB_PTPREQUEST_GETSTATUS_SIZE) {
 			size = USB_PTPREQUEST_GETSTATUS_SIZE;
@@ -1158,10 +1165,7 @@ static long  mtpg_ioctl(struct file *fd, unsigned int code, unsigned long arg)
 		max_pkt = dev->bulk_in->maxpacket;
 		printk(KERN_DEBUG "[%s] line = %d max_pkt = [%d]\n",
 						 __func__, __LINE__, max_pkt);
-		if (max_pkt == 64)
-			status = 64;
-		else
-			status = 512;
+		status = max_pkt;
 		break;
 	case SEND_FILE_WITH_HEADER:
 	{

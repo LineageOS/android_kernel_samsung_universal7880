@@ -85,7 +85,7 @@
 			io_device_2 {
 				iod,name = "umts_rfs0";
 				iod,id = <245>;
-				iod,format = <1>;		/* IPC_RFS */
+				iod,format = <2>;		/* IPC_RFS */
 				iod,io_type = <0>;
 				iod,links = <0x200>;
 				iod,attrs = <0x2>;
@@ -247,7 +247,7 @@
 	shmem: shmem@F0000000 {
 		compatible = "samsung,exynos-shm_ipc";
 
-		shmem,ipc_offset = <0x7800000>;
+		shmem,ipc_offset = <0x7000000>;
 		shmem,ipc_size = <0x400000>;
 	};
 };

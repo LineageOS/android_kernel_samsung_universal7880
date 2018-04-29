@@ -32,10 +32,6 @@ config DISPLAY_USE_INFO
 	tristate "Support display use info logging"
 	default n
 
-config PANEL_S6E3HA2
-	depends on EXYNOS_DECON7880_LCD && EXYNOS_MIPI_DSI
-	tristate "S6E3HA2 AMOLED driver"
-
 config PANEL_S6E3FA3_A7Y17
 	depends on EXYNOS_DECON7880_LCD && EXYNOS_MIPI_DSI
 	tristate "S6E3FA3 A7Y17 AMOLED driver"

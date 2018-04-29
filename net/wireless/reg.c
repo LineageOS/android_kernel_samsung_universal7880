@@ -2252,9 +2252,11 @@ static void restore_regulatory_settings(bool reset_user)
 	* since device should find around other Access Points.
 	* 2014.1.8 Convergence Wi-Fi Core
 	*/
-
+	
+#ifdef CONFIG_CFG80211_REG_NOT_UPDATED
 	printk("regulatory is not upadted via %s.\n", __func__);
 	return;
+#endif
 
 	ASSERT_RTNL();
 

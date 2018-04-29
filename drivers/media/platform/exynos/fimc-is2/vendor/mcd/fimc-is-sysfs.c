@@ -80,6 +80,26 @@ extern int comp_fac_i2c_check;
 extern u16 comp_fac_valid_check;
 #endif
 
+#ifdef USE_SSRM_CAMERA_INFO
+struct ssrm_camera_data {
+	int operation;
+	int cameraID;
+	int previewSizeWidth;
+	int previewSizeHeight;
+	int previewMinFPS;
+	int previewMaxFPS;
+	int sensorOn;
+};
+
+enum ssrm_camerainfo_operation {
+	SSRM_CAMERA_INFO_CLEAR,
+	SSRM_CAMERA_INFO_SET,
+	SSRM_CAMERA_INFO_UPDATE,
+};
+
+struct ssrm_camera_data SsrmCameraInfo[FIMC_IS_SENSOR_COUNT];
+#endif /* USE_SSRM_CAMERA_INFO */
+
 #ifdef CAMERA_SYSFS_V2
 int fimc_is_get_cam_info(struct fimc_is_cam_info **caminfo)
 {
@@ -101,11 +121,15 @@ static int read_from_firmware_version(int position)
 
 	fimc_is_vender_check_hw_init_running();
 
-	if (((position == SENSOR_POSITION_REAR) && (!finfo->is_caldata_read))
+	if (force_caldata_dump ||
+		((position == SENSOR_POSITION_REAR) && (!finfo->is_caldata_read))
 #if defined(CONFIG_CAMERA_EEPROM_SUPPORT_FRONT)
 		|| ((position == SENSOR_POSITION_FRONT) && (!front_finfo->is_caldata_read))
 #endif
 	) {
+		if (force_caldata_dump)
+			info("%s: forced caldata dump!!\n", __func__);
+
 		ret = fimc_is_sec_run_fw_sel(is_dev, position);
 		if (ret) {
 			err("fimc_is_sec_run_fw_sel is fail(%d)", ret);
@@ -222,6 +246,106 @@ static DEVICE_ATTR(SVC_rear_module, S_IRUGO, camera_rear_moduleid_show, NULL);
 static DEVICE_ATTR(front_sensorid, S_IRUGO, camera_front_sensorid_show, NULL);
 static DEVICE_ATTR(front_moduleid, S_IRUGO, camera_front_moduleid_show, NULL);
 static DEVICE_ATTR(SVC_front_module, S_IRUGO, camera_front_moduleid_show, NULL);
+
+#ifdef USE_SSRM_CAMERA_INFO
+static ssize_t camera_ssrm_camera_info_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct ssrm_camera_data temp;
+	int ret_count;
+	int index = -1;
+	int i = 0;
+
+	ret_count = sscanf(buf, "%d%d%d%d%d%d%d", &temp.operation, &temp.cameraID, &temp.previewMinFPS,
+		&temp.previewMaxFPS, &temp.previewSizeWidth,  &temp.previewSizeHeight, &temp.sensorOn);
+
+	if (ret_count > sizeof(SsrmCameraInfo)/sizeof(int))
+		return -EINVAL;
+
+	switch (temp.operation) {
+	case SSRM_CAMERA_INFO_CLEAR:
+		for (i = 0; i < FIMC_IS_SENSOR_COUNT; i++) { /* clear */
+			if (SsrmCameraInfo[i].cameraID == temp.cameraID) {
+				SsrmCameraInfo[i].previewMaxFPS = 0;
+				SsrmCameraInfo[i].previewMinFPS = 0;
+				SsrmCameraInfo[i].previewSizeHeight = 0;
+				SsrmCameraInfo[i].previewSizeWidth = 0;
+				SsrmCameraInfo[i].sensorOn = 0;
+				SsrmCameraInfo[i].cameraID = -1;
+			}
+		}
+		break;
+
+	case SSRM_CAMERA_INFO_SET:
+		for (i = 0; i < FIMC_IS_SENSOR_COUNT; i++) { /* find empty space*/
+			if (SsrmCameraInfo[i].cameraID == -1) {
+				index = i;
+				break;
+			}
+		}
+
+		if (index == -1)
+			return -EPERM;
+
+		memcpy(&SsrmCameraInfo[i], &temp, sizeof(temp));
+		break;
+
+	case SSRM_CAMERA_INFO_UPDATE:
+		for (i = 0; i < FIMC_IS_SENSOR_COUNT; i++) {
+			if (SsrmCameraInfo[i].cameraID == temp.cameraID) {
+				SsrmCameraInfo[i].previewMaxFPS = temp.previewMaxFPS;
+				SsrmCameraInfo[i].previewMinFPS = temp.previewMinFPS;
+				SsrmCameraInfo[i].previewSizeHeight = temp.previewSizeHeight;
+				SsrmCameraInfo[i].previewSizeWidth = temp.previewSizeWidth;
+				SsrmCameraInfo[i].sensorOn = temp.sensorOn;
+				break;
+			}
+		}
+		break;
+	default:
+		break;
+	}
+
+	return count;
+}
+
+static ssize_t camera_ssrm_camera_info_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	char temp_buffer[50] = {0,};
+	int i = 0;
+
+	for (i = 0; i < FIMC_IS_SENSOR_COUNT; i++) {
+		if (SsrmCameraInfo[i].cameraID != -1) {
+			strncat(buf, "ID=", strlen("ID="));
+			sprintf(temp_buffer, "%d;", SsrmCameraInfo[i].cameraID);
+			strncat(buf, temp_buffer, strlen(temp_buffer));
+
+			strncat(buf, "ON=", strlen("ON="));
+			sprintf(temp_buffer, "%d;", SsrmCameraInfo[i].sensorOn);
+			strncat(buf, temp_buffer, strlen(temp_buffer));
+
+			if (SsrmCameraInfo[i].previewMinFPS && SsrmCameraInfo[i].previewMaxFPS) {
+				strncat(buf, "FPS=", strlen("FPS="));
+				sprintf(temp_buffer, "%d,%d;",
+					SsrmCameraInfo[i].previewMinFPS, SsrmCameraInfo[i].previewMaxFPS);
+				strncat(buf, temp_buffer, strlen(temp_buffer));
+			}
+			if (SsrmCameraInfo[i].previewSizeWidth && SsrmCameraInfo[i].previewSizeHeight) {
+				strncat(buf, "SIZE=", strlen("SIZE="));
+				sprintf(temp_buffer, "%d,%d;",
+					SsrmCameraInfo[i].previewSizeWidth, SsrmCameraInfo[i].previewSizeHeight);
+				strncat(buf, temp_buffer, strlen(temp_buffer));
+			}
+			strncat(buf, "\n", strlen("\n"));
+		}
+	}
+	return strlen(buf);
+}
+
+static DEVICE_ATTR(ssrm_camera_info, 0644, camera_ssrm_camera_info_show, camera_ssrm_camera_info_store);
+#endif /* USE_SSRM_CAMERA_INFO */
 
 static int fimc_is_get_sensor_data(struct device *dev, char *maker, char *name, int position)
 {
@@ -1253,12 +1377,20 @@ static ssize_t camera_hw_init_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct fimc_is_vender *vender;
+#ifdef USE_SSRM_CAMERA_INFO
+	int i;
+#endif
 
 	vender = &sysfs_core->vender;
 
 	if (!check_module_init) {
 		fimc_is_vender_hw_init(vender);
 		check_module_init = true;
+#ifdef USE_SSRM_CAMERA_INFO
+		for (i = 0; i < FIMC_IS_SENSOR_COUNT; i++) {
+			SsrmCameraInfo[i].cameraID = -1;
+		}
+#endif
 	}
 
 	return sprintf(buf, "%s\n", "HW init done.");
@@ -1805,6 +1937,15 @@ int fimc_is_create_sysfs(struct fimc_is_core *core)
 		}
 #endif
 
+#ifdef USE_SSRM_CAMERA_INFO
+		if (device_create_file(camera_rear_dev,
+				&dev_attr_ssrm_camera_info) < 0) {
+			printk(KERN_ERR
+				"failed to create front device file, %s\n",
+				dev_attr_ssrm_camera_info.attr.name);
+		}
+#endif
+
 #ifdef CONFIG_COMPANION_USE
 		if (device_create_file(camera_rear_dev, &dev_attr_rear_companionfw) < 0) {
 			printk(KERN_ERR "failed to create rear device file, %s\n",
@@ -1950,6 +2091,9 @@ int fimc_is_destroy_sysfs(struct fimc_is_core *core)
 #endif
 #ifdef USE_CAMERA_HW_BIG_DATA
 		device_remove_file(camera_rear_dev, &dev_attr_rear_hwparam);
+#endif
+#ifdef USE_SSRM_CAMERA_INFO
+		device_remove_file(camera_rear_dev, &dev_attr_ssrm_camera_info);
 #endif
 	}
 

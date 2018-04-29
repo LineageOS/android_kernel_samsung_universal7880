@@ -635,8 +635,8 @@ static int muic_handle_ccic_RID(muic_data_t *pmuic, CC_NOTI_RID_TYPEDEF *pnoti)
 		return 0;
 	}
 
-	if (pdesc->ccic_evt_attached != MUIC_CCIC_NOTI_ATTACH) {
-		pr_info("%s: RID but No ATTACH->discarded\n", __func__);
+	if (pdesc->ccic_evt_attached != MUIC_CCIC_NOTI_ATTACH && rid == RID_OPEN) {
+		pr_info("%s: RID Open but No ATTACH->discarded\n", __func__);
 		return 0;
 	}
 

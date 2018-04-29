@@ -12,15 +12,17 @@
 
 
 extern unsigned int lcdtype;
-#if defined(CONFIG_PANEL_S6E3HA2)
-extern struct mipi_dsim_lcd_driver s6e3ha2_mipi_lcd_driver;
-#elif defined(CONFIG_PANEL_S6E3FA3_A7Y17)
+
+extern struct mipi_dsim_lcd_driver *mipi_lcd_driver;
+
+#if defined(CONFIG_PANEL_S6E3FA3_A7Y17)
 extern struct mipi_dsim_lcd_driver s6e3fa3_mipi_lcd_driver;
 #elif defined(CONFIG_PANEL_S6E3FA3_A5Y17)
 extern struct mipi_dsim_lcd_driver s6e3fa3_mipi_lcd_driver;
 #endif
 
-int dsim_panel_ops_init(struct dsim_device *dsim);
+extern int dsim_panel_ops_init(struct dsim_device *dsim);
+extern int register_lcd_driver(struct mipi_dsim_lcd_driver *drv);
 
 
 #endif

@@ -212,7 +212,10 @@ int sensor_3p8_cis_init(struct v4l2_subdev *subdev)
 	cis->cis_data->low_expo_start = 33000;
 	cis->need_mode_change = false;
 
-	sensor_3p8_cis_data_calculation(sensor_3p8_pllinfos[setfile_index], cis->cis_data);
+	if (cis->use_pdaf == true)
+		sensor_3p8_cis_data_calculation(sensor_3p8_pdaf_pllinfos[setfile_index], cis->cis_data);
+	else
+		sensor_3p8_cis_data_calculation(sensor_3p8_pllinfos[setfile_index], cis->cis_data);
 
 	setinfo.return_value = 0;
 	CALL_CISOPS(cis, cis_get_min_exposure_time, subdev, &setinfo.return_value);

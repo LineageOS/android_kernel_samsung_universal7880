@@ -282,7 +282,7 @@ static int dsim_partial_area_command(struct dsim_device *dsim, void *arg)
 	char data_2b[5];
 	int retry;
 
-	if (!priv->lcdConnected)
+	if (!priv->lcdconnected)
 		return 0;
 
 	dsim_dbg("%s: (%d, %d, %d,%d)\n", __func__,

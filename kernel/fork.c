@@ -74,6 +74,8 @@
 #include <linux/uprobes.h>
 #include <linux/aio.h>
 #include <linux/compiler.h>
+#include <linux/kcov.h>
+#include <linux/workqueue.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -370,6 +372,8 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 
 	account_kernel_stack(ti, 1);
 
+	kcov_task_init(tsk);
+
 	return tsk;
 
 free_ti:
@@ -532,8 +536,37 @@ static inline void mm_free_pgd(struct mm_struct *mm)
 
 __cacheline_aligned_in_smp DEFINE_SPINLOCK(mmlist_lock);
 
-#define allocate_mm()	(kmem_cache_alloc(mm_cachep, GFP_KERNEL))
-#define free_mm(mm)	(kmem_cache_free(mm_cachep, (mm)))
+struct mm_work {
+	struct work_struct work;
+	struct mm_struct *mm;
+};
+
+static struct mm_struct *allocate_mm(void)
+{
+	struct mm_struct *mm;
+	struct mm_work *mmw;
+
+	mmw = kmalloc(sizeof(*mmw), GFP_KERNEL);
+	if (!mmw)
+		return NULL;
+
+	mm = kmem_cache_alloc(mm_cachep, GFP_KERNEL);
+	if (!mm) {
+		kfree(mmw);
+		return NULL;
+	}
+
+	mm->async_put_work = mmw;
+	mmw->mm = mm;
+
+	return mm;
+}
+
+static void free_mm(struct mm_struct *mm)
+{
+	kfree(mm->async_put_work);
+	kmem_cache_free(mm_cachep, mm);
+}
 
 static unsigned long default_dump_filter = MMF_DUMP_FILTER_DEFAULT;
 
@@ -659,6 +692,26 @@ void __mmdrop(struct mm_struct *mm)
 }
 EXPORT_SYMBOL_GPL(__mmdrop);
 
+static inline void __mmput(struct mm_struct *mm)
+{
+	VM_BUG_ON(atomic_read(&mm->mm_users));
+
+	uprobe_clear_state(mm);
+	exit_aio(mm);
+	ksm_exit(mm);
+	khugepaged_exit(mm); /* must run before exit_mmap */
+	exit_mmap(mm);
+	set_mm_exe_file(mm, NULL);
+	if (!list_empty(&mm->mmlist)) {
+		spin_lock(&mmlist_lock);
+		list_del(&mm->mmlist);
+		spin_unlock(&mmlist_lock);
+	}
+	if (mm->binfmt)
+		module_put(mm->binfmt->module);
+	mmdrop(mm);
+}
+
 /*
  * Decrement the use count and release all resources for an mm.
  */
@@ -666,24 +719,26 @@ void mmput(struct mm_struct *mm)
 {
 	might_sleep();
 
-	if (atomic_dec_and_test(&mm->mm_users)) {
-		uprobe_clear_state(mm);
-		exit_aio(mm);
-		ksm_exit(mm);
-		khugepaged_exit(mm); /* must run before exit_mmap */
-		exit_mmap(mm);
-		set_mm_exe_file(mm, NULL);
-		if (!list_empty(&mm->mmlist)) {
-			spin_lock(&mmlist_lock);
-			list_del(&mm->mmlist);
-			spin_unlock(&mmlist_lock);
-		}
-		if (mm->binfmt)
-			module_put(mm->binfmt->module);
-		mmdrop(mm);
-	}
+	if (atomic_dec_and_test(&mm->mm_users))
+		__mmput(mm);
 }
 EXPORT_SYMBOL_GPL(mmput);
+
+static void mmput_async_fn(struct work_struct *work)
+{
+	struct mm_work *mmw = container_of(work, struct mm_work, work);
+	__mmput(mmw->mm);
+}
+
+void mmput_async(struct mm_struct *mm)
+{
+	if (atomic_dec_and_test(&mm->mm_users)) {
+		struct mm_work *mmw = mm->async_put_work;
+
+		INIT_WORK(&mmw->work, mmput_async_fn);
+		schedule_work(&mmw->work);
+	}
+}
 
 void set_mm_exe_file(struct mm_struct *mm, struct file *new_exe_file)
 {
@@ -1304,6 +1359,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 
 	p->utime = p->stime = p->gtime = 0;
 	p->utimescaled = p->stimescaled = 0;
+	p->cpu_power = 0;
 #ifndef CONFIG_VIRT_CPU_ACCOUNTING_NATIVE
 	p->prev_cputime.utime = p->prev_cputime.stime = 0;
 #endif

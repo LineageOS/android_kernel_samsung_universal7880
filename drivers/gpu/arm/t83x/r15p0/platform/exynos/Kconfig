@@ -115,10 +115,16 @@ config MALI_EXYNOS_SECURE_RENDERING
     default n
     help
       Support Secure Rendering on Exynos SoC
+config MALI_SEC_JOB_STATUS_CHECK
+	bool "Enable GPU JOB & FENCE STATUS DUMP "
+	depends on MALI_T83X && MALI_RT_PM && MALI_DVFS
+	default y
+	help
+	  Choose this option to enable job & fence status dump feature in the Mali t83x DDK.
 
 config MALI_SEC_ASP_SECURE_BUF_CTRL
     bool "Enable EXYNOS Secure Rendering whit ASP Support"
-    depends on MALI_t83x && MALI_EXYNOS_SECURE_RENDERING && ION_EXYNOS && EXYNOS_CONTENT_PATH_PROTECTION
+    depends on MALI_T83X && MALI_EXYNOS_SECURE_RENDERING && ION_EXYNOS && EXYNOS_CONTENT_PATH_PROTECTION
     default n
     help
       Support Secure Rendering with ASP on Exynos SoC

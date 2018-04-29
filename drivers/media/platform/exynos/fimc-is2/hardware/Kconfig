@@ -36,9 +36,3 @@ config USE_HW_API_COMMON
 	default y
 	help
 	  Enalbe HW API Common library.
-
-config USE_HOST_FD_LIBRARY
-	bool "Use FD library in host"
-	default n
-	help
-	  Enalbe SW FD library in host.

@@ -519,7 +519,7 @@ static int audmixer_init_mixer(void)
 		/* BT Configuration Initialisation */
 		/* I2s mode - Mixer Slave - 32 BCK configuration*/
 		regmap_write(g_audmixer->regmap, AUDMIXER_REG_07_IN3_CTL1,
-				MIXER_MASTER << INCTL1_MASTER_SHIFT |
+				MIXER_SLAVE << INCTL1_MASTER_SHIFT |
 				MPCM_SLOT_32BCK << INCTL1_MPCM_SLOT_SHIFT |
 				I2S_PCM_MODE_I2S << INCTL1_I2S_PCM_SHIFT);
 

@@ -2308,6 +2308,11 @@ static ssize_t cmd_store(struct device *dev, struct device_attribute *attr,
 		return -EINVAL;
 	}
 
+	if (count >= (unsigned int)CMD_STR_LEN) {
+		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: cmd length(count) is over (%s,%d)!!\n", __func__, buf, (unsigned int)count);
+		return -EINVAL;
+	}
+
 	if (data->cmd_is_running == true) {
 		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: Still servicing previous command. Skip cmd :%s\n",
 			 __func__, buf);

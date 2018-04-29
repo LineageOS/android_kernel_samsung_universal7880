@@ -85,7 +85,7 @@ struct dsim_resources {
 };
 
 struct panel_private {
-	unsigned int lcdConnected;
+	unsigned int lcdconnected;
 	void *par;
 #ifdef CONFIG_LCD_HMT
 	unsigned int hmt_on;
@@ -140,6 +140,7 @@ struct dsim_device {
  */
 
 struct mipi_dsim_lcd_driver {
+	char	*name;
 	int	(*early_probe)(struct dsim_device *dsim);
 	int	(*probe)(struct dsim_device *dsim);
 	int	(*suspend)(struct dsim_device *dsim);

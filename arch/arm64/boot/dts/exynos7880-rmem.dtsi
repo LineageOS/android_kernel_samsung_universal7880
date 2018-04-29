@@ -22,9 +22,14 @@
 			reg = <0 0x45FFF000 0x1000>;
 		};
 
+		tima_mem: tima_region@0x52800000 {
+			compatible = "removed-dma-pool";
+			reg = <0x0 0x52800000 0x200000>;
+		};
+
 		modem_if {
 			compatible = "exynos,modem_if";
-			reg = <0 0x68000000 0x8000000>;
+			reg = <0 0x68000000 0x7400000>;
 			id = <0>;
 		};
 
@@ -91,7 +96,7 @@
 			compatible = "exynos8890-ion,vstream";
 			secure;
 			reusable;
-			reg = <0x0 0x75C00000 0x1000000>;
+			reg = <0x0 0x75C00000 0x1800000>;
 			id = <3>;
 			compat-id = <25 31>;
 		};
@@ -100,7 +105,8 @@
 			compatible = "exynos8890-ion,vframe";
 			secure;
 			reusable;
-			reg = <0x0 0x76C00000 0x5400000>;
+			ion,bulk_reclaim;
+			reg = <0x0 0x77400000 0x5400000>;
 			id = <5>;
 			compat-id = <26 29>;
 		};

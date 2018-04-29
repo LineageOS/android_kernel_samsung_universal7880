@@ -770,6 +770,11 @@ int exynos_ss_post_reboot(void)
 	for (cpu = 0; cpu < ESS_NR_CPUS; cpu++)
 		exynos_ss_set_core_panic_stat(ESS_SIGN_RESET, cpu);
 
+#ifdef CONFIG_SEC_DEBUG
+	sec_debug_reboot_handler();
+	flush_cache_all();
+#endif
+
 	return 0;
 }
 EXPORT_SYMBOL(exynos_ss_post_reboot);

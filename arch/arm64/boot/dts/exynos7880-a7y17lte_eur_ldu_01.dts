@@ -318,17 +318,7 @@
 		status = "okay";
 	};
 
-	decon_board_list: decon_board_list {
-		dsim_set_panel_power_enable {
-			type = "regulator,enable", "gpio,high", "delay,usleep";
-			regulator = "LCD_3P0";
-			gpios = <&gpd1 6 0x1>;
-			delay = <10000 11000>;
-		};
-		dsim_set_panel_power_disable {
-			type = "gpio,low", "regulator,disable", "gpio,low";
-			regulator = "LCD_3P0";
-			gpios = <&gpd3 4 0x1>, <&gpd1 6 0x1>;
-		};
+	dsim_0: dsim@0x14800000 {
+		decon_board = <&decon_board_old>;
 	};
 };

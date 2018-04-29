@@ -1180,8 +1180,6 @@
 			"pwm-tdiv2", "pwm-tdiv3",
 			"pwm-tin0", "pwm-tin1",
 			"pwm-tin2", "pwm-tin3";
-		pinctrl-names = "default";
-		pinctrl-0 = <&pwm_tout1>;
 		status = "okay";
 	};
 

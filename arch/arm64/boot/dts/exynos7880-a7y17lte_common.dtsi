@@ -42,6 +42,7 @@
 	};
 
 	serial_0: uart@13810000 {
+		samsung,uart-logging;
 		status = "okay";
 	};
 
@@ -748,7 +749,7 @@
                         "fast-slew-rate-4x",
                         "fast-slew-rate-5x",
                         "fast-slew-rate-6x";
-                pinctrl-0 = <&sd0_clk &sd0_cmd &sd0_rdqs &sd0_bus1 &sd0_bus4 &sd0_bus8>;
+		pinctrl-0 = <&sd0_clk &sd0_cmd &sd0_rdqs &sd0_bus1 &sd0_bus4 &sd0_bus8 &sd0_rst>;
                 pinctrl-1 = <&sd0_clk_fast_slew_rate_1x>;
                 pinctrl-2 = <&sd0_clk_fast_slew_rate_2x>;
                 pinctrl-3 = <&sd0_clk_fast_slew_rate_3x>;
@@ -844,29 +845,11 @@
 
 	dsim_0: dsim@0x14800000 {
 		lcd_info = <&s6e3fa3>;
-		decon_board = <&decon_board_list>;
+		decon_board = <&decon_board>;
 	};
 
 	dsim_1: dsim@0x14810000 {
 		status = "disabled";
-	};
-
-	decon_board_list: decon_board_list {
-		dsim_set_panel_power_enable {
-			type = "regulator,enable", "regulator,enable", "delay,usleep";
-			regulator = "LCD_3P0", "LCD_1P8";
-			delay = <10000 11000>;
-		};
-		dsim_set_panel_power_disable {
-			type = "gpio,low", "regulator,disable", "regulator,disable";
-			regulator = "LCD_1P8", "LCD_3P0";
-			gpios = <&gpd3 4 0x1>;
-		};
-		dsim_reset_panel {
-			type = "delay,usleep", "gpio,high", "delay,usleep", "gpio,low", "delay,usleep", "gpio,high", "delay,usleep";
-			delay = <1000 1100>, <5000 6000>, <5000 6000>, <10000 11000>;
-			gpios = <&gpd3 4 0x1>, <&gpd3 4 0x1>, <&gpd3 4 0x1>;
-		};
 	};
 
 	pinctrl@139F0000 {
@@ -880,6 +863,87 @@
 		};
 	};
 
+	decon_board: decon_board {
+		compatible = "simple-bus";
+		pinctrl-names = "off", "on";
+		pinctrl-0 = <&disp_pcd_off>;
+		pinctrl-1 = <&disp_pcd>;
+
+		gpio_lcd_rst = <&gpd3 4 0x1>;
+
+		dsim_set_panel_power_enable {
+			type =
+			"regulator,enable",	"LCD_3P0",
+			"regulator,enable",	"LCD_1P8",
+			"delay,usleep",	"10000 11000";
+		};
+		dsim_set_panel_power_disable {
+			type =
+			"gpio,low",	"gpio_lcd_rst",
+			"regulator,disable",	"LCD_1P8",
+			"regulator,disable",	"LCD_3P0";
+		};
+		dsim_reset_panel {
+			type =
+			"delay,usleep",	"1000 1100",
+			"gpio,high",	"gpio_lcd_rst",
+			"delay,usleep",	"5000 6000",
+			"gpio,low",	"gpio_lcd_rst",
+			"delay,usleep",	"5000 6000",
+			"gpio,high",	"gpio_lcd_rst",
+			"delay,usleep",	"10000 11000";
+		};
+		pinctrl_enable {
+			type =
+			"pinctrl",	"on";
+		};
+		pinctrl_disable {
+			type =
+			"pinctrl",	"off";
+		};
+	};
+
+	decon_board_old: decon_board_old {
+		compatible = "simple-bus";
+		pinctrl-names = "off", "on";
+		pinctrl-0 = <&disp_pcd_off>;
+		pinctrl-1 = <&disp_pcd>;
+
+		gpio_lcd_en = <&gpd1 6 0x1>;
+		gpio_lcd_rst = <&gpd3 4 0x1>;
+
+		dsim_set_panel_power_enable {
+			type =
+			"regulator,enable",	"LCD_3P0",
+			"gpio,high",	"gpio_lcd_en",
+			"delay,usleep",	"10000 11000";
+		};
+		dsim_set_panel_power_disable {
+			type =
+			"gpio,low",	"gpio_lcd_rst",
+			"regulator,disable",	"LCD_3P0",
+			"gpio,low",	"gpio_lcd_en";
+		};
+		dsim_reset_panel {
+			type =
+			"delay,usleep",	"1000 1100",
+			"gpio,high",	"gpio_lcd_rst",
+			"delay,usleep",	"5000 6000",
+			"gpio,low",	"gpio_lcd_rst",
+			"delay,usleep",	"5000 6000",
+			"gpio,high",	"gpio_lcd_rst",
+			"delay,usleep",	"10000 11000";
+		};
+		pinctrl_enable {
+			type =
+			"pinctrl",	"on";
+		};
+		pinctrl_disable {
+			type =
+			"pinctrl",	"off";
+		};
+	};
+
 	s6e3fa3: s6e3fa3_fhd {
 		mode = <2>;	/* 2: MIPI command mode */
 		resolution = <1080 1920>;
@@ -890,10 +954,6 @@
 		timing,dsi-hs-clk = <997>;
 		timing,pms = <3 230 1>;
 		timing,dsi-escape-clk = <16>;
-
-		pinctrl-names = "off", "on";
-		pinctrl-0 = <&disp_pcd_off>;
-		pinctrl-1 = <&disp_pcd>;
 	};
 
 	tmuctrl_0: tmuctrl_CPUCL0@10130000 {

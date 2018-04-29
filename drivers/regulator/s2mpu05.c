@@ -27,6 +27,13 @@
 #include <linux/mfd/samsung/s2mpu05.h>
 #include <linux/io.h>
 #include <trace/events/exynos.h>
+#ifdef CONFIG_SEC_PM
+#include <linux/sec_sysfs.h>
+
+#define STATUS1_ACOK	BIT(2)
+
+static struct device *ap_pmic_dev;
+#endif /* CONFIG_SEC_PM */
 
 static struct s2mpu05_info *static_info;
 
@@ -639,6 +646,37 @@ static int s2mpu05_pmic_dt_parse_pdata(struct sec_pmic_dev *iodev,
 }
 #endif /* CONFIG_OF */
 
+#ifdef CONFIG_SEC_PM
+static ssize_t chg_det_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	int ret, chg_det;
+	u8 val;
+
+	ret = sec_reg_read(static_info->iodev, S2MPU05_REG_ST1, &val);
+
+	if(ret)
+		chg_det = -1;
+	else
+		chg_det = !!(val & STATUS1_ACOK); // ACOK active high
+
+	pr_info("%s: ap pmic chg det: %d\n", __func__, chg_det);
+
+	return sprintf(buf, "%d\n", chg_det);
+}
+
+static DEVICE_ATTR_RO(chg_det);
+
+static struct attribute *ap_pmic_attributes[] = {
+	&dev_attr_chg_det.attr,
+	NULL
+};
+
+static const struct attribute_group ap_pmic_attr_group = {
+	.attrs = ap_pmic_attributes,
+};
+#endif /* CONFIG_SEC_PM */
+
 static int s2mpu05_pmic_probe(struct platform_device *pdev)
 {
 	struct sec_pmic_dev *iodev = dev_get_drvdata(pdev->dev.parent);
@@ -764,6 +802,14 @@ static int s2mpu05_pmic_probe(struct platform_device *pdev)
 		return ret;
 	}
 	dev_info(&pdev->dev, "BUCK2_CTRL4 : %d uV\n", (value * S2MPU05_BUCK_STEP1) + S2MPU05_BUCK_MIN1);
+
+#ifdef CONFIG_SEC_PM
+	ap_pmic_dev = sec_device_create(NULL, "ap_pmic");
+
+	ret = sysfs_create_group(&ap_pmic_dev->kobj, &ap_pmic_attr_group);
+	if (ret)
+		dev_err(&pdev->dev, "failed to create ap_pmic sysfs group\n");
+#endif /* CONFIG_SEC_PM */
 
 #ifdef CONFIG_SEC_DEBUG_PMIC
 	s2mpu05->pmic_test_class = class_create(THIS_MODULE, "pmic_test");

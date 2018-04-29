@@ -16,6 +16,8 @@
 /* Support PDAF SW Solution */
 #define USE_AP_PDAF /* S5K3P8 with PDAF */
 
+//#define USE_SSRM_CAMERA_INFO /* Match with SAMSUNG_SSRM define of Camera Hal side */
+
 #define USE_COMMON_CAM_IO_PWR
 
 //#define USE_SMART_BINNING_FRONT /* smart binning 2 */

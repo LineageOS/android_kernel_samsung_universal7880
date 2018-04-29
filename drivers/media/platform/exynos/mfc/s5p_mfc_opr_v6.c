@@ -485,7 +485,11 @@ static inline int s5p_mfc_run_dec_last_frames(struct s5p_mfc_ctx *ctx)
 					index, ctx->stream_protect_flag);
 		}
 
-		s5p_mfc_set_dec_stream_buffer(ctx, temp_vb, 0, 0);
+		if (dec->consumed)
+			s5p_mfc_set_dec_stream_buffer(ctx, temp_vb,
+					dec->consumed, dec->remained_size);
+		else
+			s5p_mfc_set_dec_stream_buffer(ctx, temp_vb, 0, 0);
 	}
 
 	if (dec->is_dynamic_dpb) {

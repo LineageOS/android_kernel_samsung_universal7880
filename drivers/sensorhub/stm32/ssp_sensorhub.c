@@ -14,8 +14,9 @@
  */
 
 #include "ssp_sensorhub.h"
+#include "ssp_iio.h"
 
-static void ssp_sensorhub_log(const char *func_name,
+void ssp_sensorhub_log(const char *func_name,
 				const char *data, int length)
 {
 	char buf[6];
@@ -38,7 +39,7 @@ static void ssp_sensorhub_log(const char *func_name,
 	for (i = 0; i < length; i++) {
 		if (length < BIG_DATA_SIZE ||
 			i < PRINT_TRUNCATE || i >= length - PRINT_TRUNCATE) {
-			snprintf(buf, sizeof(buf), "%d", (signed char)data[i]);
+			snprintf(buf, sizeof(buf), "0x%x", (signed char)data[i]);
 			strlcat(log_str, buf, log_size);
 
 			if (i < length - 1)
@@ -110,7 +111,7 @@ static ssize_t ssp_sensorhub_write(struct file *file, const char __user *buf,
 		return -EINVAL;
 	}
 
-	buffer = kzalloc(count * sizeof(char), GFP_KERNEL);
+	buffer = kcalloc(count, sizeof(char), GFP_KERNEL);
 	if (unlikely(!buffer)) {
 		ssp_errf("allocate memory for kernel buffer err");
 		return -ENOMEM;
@@ -275,23 +276,18 @@ void ssp_sensorhub_report_notice(struct ssp_data *ssp_data, char notice)
 {
 	struct ssp_sensorhub_data *hub_data = ssp_data->hub_data;
 
-	if(notice == MSG2SSP_AP_STATUS_RESET)
-	{
-		if(ssp_data->is_reset_from_sysfs == true)
-		{
+	if (notice == MSG2SSP_AP_STATUS_RESET) {
+		if (ssp_data->is_reset_from_sysfs == true) {
 			input_report_rel(hub_data->sensorhub_input_dev, NOTICE, RESET_REASON_SYSFS_REQUEST);
 			ssp_data->is_reset_from_sysfs = false;
-		}
-		else if(ssp_data->is_reset_from_kernel == true)
-		{
+		} else if (ssp_data->is_reset_from_kernel == true) {
 			input_report_rel(hub_data->sensorhub_input_dev, NOTICE, RESET_REASON_KERNEL_RESET);
 			ssp_data->is_reset_from_kernel = false;
-		}
-		else
-			input_report_rel(hub_data->sensorhub_input_dev, NOTICE,RESET_REASON_MCU_CRASHED);
-	}
-	else
+		} else
+			input_report_rel(hub_data->sensorhub_input_dev, NOTICE, RESET_REASON_MCU_CRASHED);
+	} else
 		input_report_rel(hub_data->sensorhub_input_dev, NOTICE, notice);
+
 	input_sync(hub_data->sensorhub_input_dev);
 
 	if (notice == MSG2SSP_AP_STATUS_WAKEUP)
@@ -319,7 +315,7 @@ static void ssp_sensorhub_report_big_library(
 	wake_lock_timeout(&hub_data->sensorhub_wake_lock, WAKE_LOCK_TIMEOUT);
 }
 
-static int ssp_sensorhub_list(struct ssp_sensorhub_data *hub_data,
+int ssp_sensorhub_list(struct ssp_sensorhub_data *hub_data,
 				char *dataframe, int length)
 {
 	struct sensorhub_event *event;
@@ -374,8 +370,13 @@ static int ssp_sensorhub_list(struct ssp_sensorhub_data *hub_data,
 int ssp_sensorhub_handle_data(struct ssp_data *ssp_data, char *dataframe,
 				int start, int end)
 {
-	struct ssp_sensorhub_data *hub_data = ssp_data->hub_data;
 	int ret = 0;
+
+#if ANDROID_VERSION >= 80000
+	ssp_infof("");
+	report_scontext_data(ssp_data, dataframe+start, end-start);
+#else
+	struct ssp_sensorhub_data *hub_data = ssp_data->hub_data;
 
 	/* add new sensorhub event into list */
 	spin_lock_bh(&hub_data->sensorhub_lock);
@@ -386,7 +387,7 @@ int ssp_sensorhub_handle_data(struct ssp_data *ssp_data, char *dataframe,
 		ssp_errf("sensorhub list err(%d)", ret);
 	else
 		wake_up(&hub_data->sensorhub_wq);
-
+#endif
 	return ret;
 }
 

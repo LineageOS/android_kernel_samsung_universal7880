@@ -365,6 +365,7 @@ void DISP_SS_EVENT_LOG(disp_ss_event_t type, struct v4l2_subdev *sd, ktime_t tim
 	case DISP_EVT_WB_SW_TRIGGER:
 	case DISP_EVT_DECON_SHUTDOWN:
 	case DISP_EVT_RSC_CONFLICT:
+	case DISP_EVT_WIN_CONFIG:
 		disp_ss_event_log_decon(type, sd, time);
 		break;
 	case DISP_EVT_DSIM_FRAMEDONE:
@@ -389,7 +390,6 @@ void DISP_SS_EVENT_LOG(disp_ss_event_t type, struct v4l2_subdev *sd, ktime_t tim
 	switch (type) {
 	case DISP_EVT_ACT_VSYNC:
 	case DISP_EVT_DEACT_VSYNC:
-	case DISP_EVT_WIN_CONFIG:
 		disp_ss_event_log_decon(type, sd, time);
 		break;
 	case DISP_EVT_DSIM_SUSPEND:

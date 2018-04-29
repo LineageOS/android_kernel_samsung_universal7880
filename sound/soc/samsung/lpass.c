@@ -310,7 +310,9 @@ void lpass_set_dma_intr(bool on)
 
 void lpass_dma_enable(bool on)
 {
-	spin_lock(&lpass.lock);
+	unsigned long flags;
+
+	spin_lock_irqsave(&lpass.lock, flags);
 	if (on) {
 		atomic_inc(&lpass.dma_use_cnt);
 		if (atomic_read(&lpass.dma_use_cnt) == 1)
@@ -320,14 +322,16 @@ void lpass_dma_enable(bool on)
 		if (atomic_read(&lpass.dma_use_cnt) == 0)
 			lpass_set_dma_intr(false);
 	}
-	spin_unlock(&lpass.lock);
+	spin_unlock_irqrestore(&lpass.lock, flags);
 }
 
 void ass_reset(int ip, int op)
 {
-	spin_lock(&lpass.lock);
+	unsigned long flags;
 
-	spin_unlock(&lpass.lock);
+	spin_lock_irqsave(&lpass.lock, flags);
+
+	spin_unlock_irqrestore(&lpass.lock, flags);
 }
 
 void lpass_reset(int ip, int op)
@@ -376,7 +380,7 @@ void lpass_reset(int ip, int op)
 		}
 		break;
 	default:
-		spin_unlock(&lpass.lock);
+		spin_unlock_irqrestore(&lpass.lock, flags);
 		pr_err("%s: wrong ip type %d!\n", __func__, ip);
 		return;
 	}
@@ -390,13 +394,13 @@ void lpass_reset(int ip, int op)
 		val |= bit;
 		break;
 	default:
-		spin_unlock(&lpass.lock);
+		spin_unlock_irqrestore(&lpass.lock, flags);
 		pr_err("%s: wrong op type %d!\n", __func__, op);
 		return;
 	}
 
 	writel(val, regs + reg);
-	spin_unlock(&lpass.lock);
+	spin_unlock_irqrestore(&lpass.lock, flags);
 }
 
 void lpass_reset_toggle(int ip)

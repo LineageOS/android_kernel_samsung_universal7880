@@ -8,6 +8,7 @@
 #include <linux/sched.h>
 #include <linux/ccic/usbpd.h>
 #include <linux/of_gpio.h>
+#include <linux/delay.h>
 
 #include <linux/muic/muic.h>
 #if defined(CONFIG_MUIC_NOTIFIER)
@@ -42,6 +43,8 @@ void s2mu004_select_pdo(int num)
 	else
 		pd_noti.sink_status.selected_pdo_num = num;
 	pr_info(" %s : PDO(%d) is selected to change\n", __func__, pd_noti.sink_status.selected_pdo_num);
+
+	msleep(50);
 
 	usbpd_manager_inform_event(pd_noti.pd_data, MANAGER_NEW_POWER_SRC);
 }

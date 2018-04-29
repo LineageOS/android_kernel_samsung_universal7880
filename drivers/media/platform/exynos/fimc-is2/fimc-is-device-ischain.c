@@ -58,7 +58,6 @@
 #include "fimc-is-clk-gate.h"
 #include "fimc-is-dvfs.h"
 #include "fimc-is-device-preprocessor.h"
-#include "fimc-is-interface-fd.h"
 #include "fimc-is-vender-specific.h"
 #include "exynos-fimc-is-module.h"
 
