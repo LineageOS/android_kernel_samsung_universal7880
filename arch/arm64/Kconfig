@@ -179,6 +179,8 @@ source "init/Kconfig"
 
 source "kernel/Kconfig.freezer"
 
+source "arch/arm64/mach-exynos/Kconfig"
+
 menu "Platform selection"
 
 config ARCH_THUNDER

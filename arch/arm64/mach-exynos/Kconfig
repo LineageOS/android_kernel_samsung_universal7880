@@ -1,0 +1,47 @@
+# arch/arm64/mach-exynos/Kconfig
+#
+# Copyright (c) 2016 Samsung Electronics Co., Ltd.
+#		http://www.samsung.com/
+#
+# Licensed under GPLv2
+
+# Configuration options for the EXYNOS7
+
+if ARCH_EXYNOS
+
+menu "SAMSUNG EXYNOS SoCs Support"
+
+choice
+	prompt "Exynos device target"
+	default MACH_EXYNOS7880_NONE
+
+config MACH_EXYNOS7880_NONE
+	bool "None"
+
+config MACH_EXYNOS7880_A5Y17LTE_EUR_OPEN
+	bool "Galaxy A5 2017 (SM-A520F)"
+
+config MACH_EXYNOS7880_A5Y17LTE_CAN_OPEN
+	bool "Galaxy A5 2017 (SM-A520W)"
+
+config MACH_EXYNOS7880_A5Y17LTE_KOR_ALL
+	bool "Galaxy A5 2017 (SM-A520L/S/K)"
+
+config MACH_EXYNOS7880_A5Y17LTE_EUR_LDU
+	bool "Galaxy A5 2017 (SM-A520X)"
+
+config MACH_EXYNOS7880_A7Y17LTE_EUR_OPEN
+	bool "Galaxy A7 2017 (SM-A720F)"
+
+config MACH_EXYNOS7880_A7Y17LTE_KOR_ALL
+	bool "Galaxy A7 2017 (SM-A720L/S/K)"
+
+config MACH_EXYNOS7880_A7Y17LTE_EUR_LDU
+	bool "Galaxy A7 2017 (SM-A720X)"
+
+endchoice
+
+endmenu
+
+endif
+
