@@ -27,6 +27,9 @@
 #include "debugfs.h"
 #include "wext-compat.h"
 #include "rdev-ops.h"
+#if 1 /* 20151217 Temporal patch for page allocation fail when wifi on */
+#include <linux/vmalloc.h>
+#endif
 
 /* name for sysfs, %d is appended */
 #define PHY_NAME "phy"
@@ -327,7 +330,11 @@ struct wiphy *wiphy_new(const struct cfg80211_ops *ops, int sizeof_priv)
 
 	alloc_size = sizeof(*rdev) + sizeof_priv;
 
+#if 1 /* 20151217 Temporal patch for page allocation fail when wifi on */
+	rdev = vzalloc(alloc_size);
+#else
 	rdev = kzalloc(alloc_size, GFP_KERNEL);
+#endif
 	if (!rdev)
 		return NULL;
 
@@ -338,7 +345,11 @@ struct wiphy *wiphy_new(const struct cfg80211_ops *ops, int sizeof_priv)
 	if (unlikely(rdev->wiphy_idx < 0)) {
 		/* ugh, wrapped! */
 		atomic_dec(&wiphy_counter);
+#if 1 /* 20151217 Temporal patch for page allocation fail when wifi on */
+		vfree(rdev);
+#else
 		kfree(rdev);
+#endif
 		return NULL;
 	}
 
@@ -381,7 +392,11 @@ struct wiphy *wiphy_new(const struct cfg80211_ops *ops, int sizeof_priv)
 				   &rdev->rfkill_ops, rdev);
 
 	if (!rdev->rfkill) {
+#if 1 /* 20151217 Temporal patch for page allocation fail when wifi on */
+		vfree(rdev);
+#else
 		kfree(rdev);
+#endif
 		return NULL;
 	}
 
@@ -743,7 +758,11 @@ void cfg80211_dev_free(struct cfg80211_registered_device *rdev)
 	}
 	list_for_each_entry_safe(scan, tmp, &rdev->bss_list, list)
 		cfg80211_put_bss(&rdev->wiphy, &scan->pub);
+#if 1 /* 20151217 Temporal patch for page allocation fail when wifi on */
+	vfree(rdev);
+#else
 	kfree(rdev);
+#endif
 }
 
 void wiphy_free(struct wiphy *wiphy)

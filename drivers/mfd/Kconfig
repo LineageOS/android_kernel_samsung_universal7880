@@ -420,6 +420,17 @@ config MFD_MAX77693
 	  additional drivers must be enabled in order to use the functionality
 	  of the device.
 
+config MFD_MAX77833
+        bool "Maxim Semiconductor MAX77833 PMIC Support"
+        depends on I2C=y
+        select MFD_CORE
+        help
+          Say yes here to support for Maxim Semiconductor MAX77833.
+          This is a Power Management IC with LDO, RGB(SVC led), Haptic,
+          MUIC controls on chip.
+          This driver provides common support for accessing the device;
+          additional drivers
+
 config MFD_MAX8907
 	tristate "Maxim Semiconductor MAX8907 PMIC Support"
 	select MFD_CORE
@@ -656,6 +667,46 @@ config MFD_SEC_CORE
 	select REGMAP_I2C
 	select REGMAP_IRQ
 	select REGULATOR
+	help
+	 Support for the Samsung Electronics MFD series.
+	 This driver provides common support for accessing the device,
+	 additional drivers must be enabled in order to use the functionality
+	 of the device
+
+config MFD_S2MU003
+	bool "SAMSUNG Electronics IF PMIC S2MU003 Series Support"
+	depends on I2C=y
+	select MFD_CORE
+	help
+	 Support for the Samsung Electronics MFD series.
+	 This driver provides common support for accessing the device,
+	 additional drivers must be enabled in order to use the functionality
+	 of the device
+
+config MFD_S2MPB02
+	bool "Samsung Semiconductor S2MPB02 PMIC Support"
+	depends on I2C=y
+	select MFD_CORE
+	help
+	  Say yes here to support for Samsung Semiconductor S2MPB02.
+	  This is a Power Management IC with Flash on chip.
+	  This driver provides common support for accessing the device;
+	  additional drivers
+
+config MFD_S2MU005
+	bool "SAMSUNG Electronics IF PMIC S2MU005 Series Support"
+	depends on I2C=y
+	select MFD_CORE
+	help
+	 Support for the Samsung Electronics MFD series.
+	 This driver provides common support for accessing the device,
+	 additional drivers must be enabled in order to use the functionality
+	 of the device
+
+config MFD_S2MU004
+	bool "SAMSUNG Electronics IF PMIC S2MU004 Series Support"
+	depends on I2C=y
+	select MFD_CORE
 	help
 	 Support for the Samsung Electronics MFD series.
 	 This driver provides common support for accessing the device,

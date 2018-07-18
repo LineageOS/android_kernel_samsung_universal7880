@@ -105,6 +105,7 @@ fw-shipped-$(CONFIG_USB_KAWETH) += kaweth/new_code.bin kaweth/trigger_code.bin \
 				   kaweth/new_code_fix.bin \
 				   kaweth/trigger_code_fix.bin
 ifdef CONFIG_FIRMWARE_IN_KERNEL
+fw-shipped-$(CONFIG_EXYNOS8890_APM) += apm_8890_v6.h
 fw-shipped-$(CONFIG_USB_SERIAL_KEYSPAN_MPR) += keyspan/mpr.fw
 fw-shipped-$(CONFIG_USB_SERIAL_KEYSPAN_USA18X) += keyspan/usa18x.fw
 fw-shipped-$(CONFIG_USB_SERIAL_KEYSPAN_USA19) += keyspan/usa19.fw
@@ -135,6 +136,20 @@ fw-shipped-$(CONFIG_USB_SERIAL_XIRCOM) += keyspan_pda/xircom_pgs.fw
 fw-shipped-$(CONFIG_USB_VICAM) += vicam/firmware.fw
 fw-shipped-$(CONFIG_VIDEO_CPIA2) += cpia2/stv0672_vp4.bin
 fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
+fw-shipped-$(CONFIG_TOUCHSCREEN_SEC_TS) += tsp_sec/mc44_a7x.bin
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_MMS449) += tsp_melfas/mms449_s5neo.fw tsp_melfas/mms449_a7y17.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_ZINITIX_ZT75XX) += tsp_zinitix/zt7538_a5y17.fw
+ifdef CONFIG_SOC_EXYNOS7880
+fw-shipped-$(CONFIG_TOUCHSCREEN_FTS) += tsp_stm/stm_v5583.fw
+fw-shipped-$(CONFIG_KEYBOARD_CYPRESS_TOUCH_MBR31X5) += cypress/cypress_zerof.fw \
+							cypress/cypress_vlte.fw cypress/cypress_noble.fw
+endif
+
+fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH_T316) += abov/a96t316_a5y17.fw abov/a96t316_a7y17.fw
+
+#Sensor Hub
+fw-shipped-$(CONFIG_SENSORS_SSP_STM32) += ssp_stmf410_a2017.fw
+fw-shipped-$(CONFIG_SENSORS_SSP_STM32) += ssp_crashed.fw
 
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
 

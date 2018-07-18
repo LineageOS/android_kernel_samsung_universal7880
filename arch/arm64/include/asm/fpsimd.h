@@ -39,6 +39,15 @@ struct fpsimd_state {
 	};
 	/* the id of the last cpu to have restored this state */
 	unsigned int cpu;
+	/*
+	 * indicate whether this state should be preserve or not
+	 * before FP/SIMD registers be used by other tasks
+	 * and the state should be restore before they be used by own.
+	 * A kernel thread which uses FP/SIMD register have to
+	 * set this flag and it could utilize for a tasks executes
+	 * some NEON instructions without preemption disable.
+	 */
+	unsigned int preserve;
 };
 
 /*
@@ -80,6 +89,9 @@ extern void fpsimd_flush_task_state(struct task_struct *target);
 extern void fpsimd_save_partial_state(struct fpsimd_partial_state *state,
 				      u32 num_regs);
 extern void fpsimd_load_partial_state(struct fpsimd_partial_state *state);
+
+void fpsimd_set_task_preserve(struct task_struct *t);
+void fpsimd_set_as_user_current(int using);
 
 #endif
 

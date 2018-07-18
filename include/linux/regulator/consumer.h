@@ -231,6 +231,8 @@ int regulator_sync_voltage(struct regulator *regulator);
 int regulator_set_current_limit(struct regulator *regulator,
 			       int min_uA, int max_uA);
 int regulator_get_current_limit(struct regulator *regulator);
+int regulator_get_max_support_voltage(struct regulator *regulator);
+int regulator_get_min_support_voltage(struct regulator *regulator);
 
 int regulator_set_mode(struct regulator *regulator, unsigned int mode);
 unsigned int regulator_get_mode(struct regulator *regulator);
@@ -451,6 +453,16 @@ static inline int regulator_is_supported_voltage(struct regulator *regulator,
 				   int min_uV, int max_uV)
 {
 	return 0;
+}
+
+static inline int regulator_get_max_support_voltage(struct regulator *regulator)
+{
+	return -EINVAL;
+}
+
+static inline int regulator_get_min_support_voltage(struct regulator *regulator)
+{
+	return -EINVAL;
 }
 
 static inline int regulator_set_current_limit(struct regulator *regulator,

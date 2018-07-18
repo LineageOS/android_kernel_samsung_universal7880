@@ -3,12 +3,14 @@
 #
 
 obj-y                          := main.o version.o mounts.o
-ifneq ($(CONFIG_BLK_DEV_INITRD),y)
 obj-y                          += noinitramfs.o
-else
 obj-$(CONFIG_BLK_DEV_INITRD)   += initramfs.o
-endif
 obj-$(CONFIG_GENERIC_CALIBRATE_DELAY) += calibrate.o
+
+ifeq ($(CONFIG_TIMA_RKP), y)
+obj-y += _vmm.o vmm.o
+obj-y += ld.o
+endif
 
 ifneq ($(CONFIG_ARCH_INIT_TASK),y)
 obj-y                          += init_task.o
