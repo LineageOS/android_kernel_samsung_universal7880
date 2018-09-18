@@ -48,6 +48,12 @@ config DEVFREQ_GOV_SIMPLE_EXYNOS
 	help
 	  Chooses frequency based on the threshold of target device.
 
+config DEVFREQ_GOV_SIMPLE_INTERACTIVE
+	tristate "Simple Interactive"
+	help
+	  Chooses frequency based on the requested PM QoS from target device.
+	  And This governor uses timer when change frequency.
+
 config DEVFREQ_GOV_PERFORMANCE
 	tristate "Performance"
 	help

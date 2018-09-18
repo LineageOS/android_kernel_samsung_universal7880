@@ -16,6 +16,8 @@
 #include <linux/device.h>
 #include <linux/notifier.h>
 #include <linux/pm_opp.h>
+#include <linux/kthread.h>
+#include <linux/timer.h>
 
 #define DEVFREQ_NAME_LEN 16
 
@@ -40,6 +42,7 @@ struct devfreq_dev_status {
 	/* both since the last measure */
 	unsigned long long total_time;
 	unsigned long long busy_time;
+	unsigned long long delta_time;
 	unsigned long current_frequency;
 	void *private_data;
 };
@@ -65,7 +68,10 @@ struct devfreq_dev_status {
  *			The "flags" parameter's possible values are
  *			explained above with "DEVFREQ_FLAG_*" macros.
  * @get_dev_status:	The device should provide the current performance
- *			status to devfreq, which is used by governors.
+ *			status to devfreq. Governors are recommended not to
+ *			use this directly. Instead, governors are recommended
+ *			to use devfreq_update_stats() along with
+ *			devfreq.last_status.
  * @get_cur_freq:	The device should provide the current frequency
  *			at which it is operating.
  * @exit:		An optional callback that is called when devfreq
@@ -162,11 +168,13 @@ struct devfreq {
 	struct delayed_work work;
 
 	unsigned long previous_freq;
+	struct devfreq_dev_status last_status;
 
 	void *data; /* private data for governors */
 
 	unsigned long min_freq;
 	unsigned long max_freq;
+	unsigned long str_freq;
 	bool stop_polling;
 
 	/* information for device frequency transition */
@@ -191,7 +199,7 @@ extern struct devfreq *devm_devfreq_add_device(struct device *dev,
 extern void devm_devfreq_remove_device(struct device *dev,
 				  struct devfreq *devfreq);
 
-/* Supposed to be called by PM_SLEEP/PM_RUNTIME callbacks */
+/* Supposed to be called by PM callbacks */
 extern int devfreq_suspend_device(struct devfreq *devfreq);
 extern int devfreq_resume_device(struct devfreq *devfreq);
 
@@ -207,7 +215,20 @@ extern int devm_devfreq_register_opp_notifier(struct device *dev,
 extern void devm_devfreq_unregister_opp_notifier(struct device *dev,
 						struct devfreq *devfreq);
 
-#if IS_ENABLED(CONFIG_DEVFREQ_GOV_SIMPLE_ONDEMAND) || IS_ENABLED(CONFIG_DEVFREQ_GOV_SIMPLE_USAGE)
+/**
+ * devfreq_update_stats() - update the last_status pointer in struct devfreq
+ * @df:		the devfreq instance whose status needs updating
+ *
+ *  Governors are recommended to use this function along with last_status,
+ * which allows other entities to reuse the last_status without affecting
+ * the values fetched later by governors.
+ */
+static inline int devfreq_update_stats(struct devfreq *df)
+{
+	return df->profile->get_dev_status(df->dev.parent, &df->last_status);
+}
+#if IS_ENABLED(CONFIG_DEVFREQ_GOV_SIMPLE_ONDEMAND) || IS_ENABLED(CONFIG_DEVFREQ_GOV_SIMPLE_USAGE)\
+	|| IS_ENABLED(CONFIG_DEVFREQ_GOV_SIMPLE_INTERACTIVE)
 struct devfreq_notifier_block {
 	struct notifier_block nb;
 	struct devfreq *df;
@@ -263,6 +284,61 @@ struct devfreq_simple_exynos_data {
 	int pm_qos_class_max;
 	unsigned long cal_qos_max;
 	bool en_monitoring;
+	struct devfreq_notifier_block nb;
+	struct devfreq_notifier_block nb_max;
+};
+#endif
+
+#if IS_ENABLED(CONFIG_DEVFREQ_GOV_SIMPLE_INTERACTIVE)
+#define DEFAULT_DELAY_TIME		10 /* msec */
+#define DEFAULT_NDELAY_TIME		1
+#define DELAY_TIME_RANGE		10
+#define BOUND_CPU_NUM			0
+
+#ifdef CONFIG_EXYNOS_WD_DVFS
+#define SIMPLE_LOAD_MAX				10
+struct devfreq_simple_load {
+	unsigned long long delta;
+	unsigned int load;
+};
+#endif
+struct devfreq_simple_interactive_data {
+#ifdef CONFIG_EXYNOS_WD_DVFS
+	struct devfreq_simple_load buffer[SIMPLE_LOAD_MAX];
+	struct devfreq_simple_load *front;
+	struct devfreq_simple_load *rear;
+	unsigned long long busy;
+	unsigned long long total;
+	unsigned int min_load;
+	unsigned int max_load;
+	unsigned long long max_spent;
+	/* governor parameter */
+#define INTERACTIVE_MIN_SAMPLE_TIME	15
+	unsigned int min_sample_time;
+#define INTERACTIVE_HOLD_SAMPLE_TIME	100
+	unsigned int hold_sample_time;
+#define INTERACTIVE_TARGET_LOAD		75
+#define INTERACTIVE_NTARGET_LOAD	1
+	unsigned int *target_load;
+	unsigned int ntarget_load;
+#define INTERACTIVE_GO_HISPEED_LOAD	99
+	unsigned int go_hispeed_load;
+#define INTERACTIVE_HISPEED_FREQ	1000000
+	unsigned int hispeed_freq;
+#define INTERACTIVE_TOLERANCE		1
+	unsigned int tolerance;
+	/* governor end */
+#endif
+	bool use_delay_time;
+	int *delay_time;
+	int ndelay_time;
+	unsigned long prev_freq;
+	u64 changed_time;
+	struct timer_list freq_timer;
+	struct timer_list freq_slack_timer;
+	struct task_struct *change_freq_task;
+	int pm_qos_class;
+	int pm_qos_class_max;
 	struct devfreq_notifier_block nb;
 	struct devfreq_notifier_block nb_max;
 };
@@ -332,6 +408,11 @@ static inline int devm_devfreq_register_opp_notifier(struct device *dev,
 static inline void devm_devfreq_unregister_opp_notifier(struct device *dev,
 							struct devfreq *devfreq)
 {
+}
+
+static inline int devfreq_update_stats(struct devfreq *df)
+{
+	return -EINVAL;
 }
 #endif /* CONFIG_PM_DEVFREQ */
 
