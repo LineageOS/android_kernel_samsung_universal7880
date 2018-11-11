@@ -22,7 +22,7 @@
  *
  */
 
-  /* usb notify layer v3.0 */
+  /* usb notify layer v3.2 */
 
 #ifndef __EXTERNAL_NOTIFY_H__
 #define __EXTERNAL_NOTIFY_H__
@@ -35,6 +35,9 @@ enum external_notify_cmd {
 	EXTERNAL_NOTIFY_DEVICE_CONNECT,
 	EXTERNAL_NOTIFY_HOSTBLOCK_PRE,
 	EXTERNAL_NOTIFY_HOSTBLOCK_POST,
+	EXTERNAL_NOTIFY_MDMBLOCK_PRE,
+	EXTERNAL_NOTIFY_MDMBLOCK_POST,
+	EXTERNAL_NOTIFY_POWERROLE,
 };
 
 /* external notifier call sequence,

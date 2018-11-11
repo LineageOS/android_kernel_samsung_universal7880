@@ -6,7 +6,7 @@
  *
 */
 
- /* usb notify layer v3.0 */
+ /* usb notify layer v3.2 */
 
 #ifndef __LINUX_USB_NOTIFY_H__
 #define __LINUX_USB_NOTIFY_H__
@@ -18,6 +18,7 @@
 #if defined(CONFIG_USB_HW_PARAM)
 #include <linux/usb_hw_param.h>
 #endif
+#include <linux/usb.h>
 
 enum otg_notify_events {
 	NOTIFY_EVENT_NONE,
@@ -36,6 +37,7 @@ enum otg_notify_events {
 	NOTIFY_EVENT_ALL_DISABLE,
 	NOTIFY_EVENT_HOST_DISABLE,
 	NOTIFY_EVENT_CLIENT_DISABLE,
+	NOTIFY_EVENT_MDM_ON_OFF,
 	NOTIFY_EVENT_OVERCURRENT,
 	NOTIFY_EVENT_SMSC_OVC,
 	NOTIFY_EVENT_SMTD_EXT_CURRENT,
@@ -45,6 +47,7 @@ enum otg_notify_events {
 	NOTIFY_EVENT_LANHUB_CONNECT,
 	NOTIFY_EVENT_POWER_SOURCE,
 	NOTIFY_EVENT_VBUSPOWER,
+	NOTIFY_EVENT_POGO,
 	NOTIFY_EVENT_VIRTUAL,
 };
 
@@ -77,6 +80,11 @@ enum otg_notify_block_type {
 	NOTIFY_BLOCK_TYPE_HOST = (1 << 0),
 	NOTIFY_BLOCK_TYPE_CLIENT = (1 << 1),
 	NOTIFY_BLOCK_TYPE_ALL = (1 << 0 | 1 << 1),
+};
+
+enum otg_notify_mdm_type {
+	NOTIFY_MDM_TYPE_OFF,
+	NOTIFY_MDM_TYPE_ON,
 };
 
 enum otg_notify_gpio {
@@ -117,6 +125,7 @@ struct otg_notify {
 	int disable_control;
 	int device_check_sec;
 	int pre_peri_delay_us;
+	int sec_whitelist_enable;
 	int speed;
 	const char *muic_name;
 	int (*pre_gpio)(int gpio, int use);
@@ -129,7 +138,7 @@ struct otg_notify {
 	int (*set_lanhubta)(int);
 	int (*set_battcall)(int, int);
 	int (*set_chg_current)(int);
-	void (*set_ldo_onoff)(void *,unsigned int);
+	void (*set_ldo_onoff)(void *, unsigned int);
 	void *o_data;
 	void *u_notify;
 };
@@ -157,6 +166,7 @@ extern struct otg_notify *get_otg_notify(void);
 extern int set_otg_notify(struct otg_notify *n);
 extern void put_otg_notify(struct otg_notify *n);
 extern bool is_blocked(struct otg_notify *n, int type);
+extern int usb_check_whitelist_for_mdm(struct usb_device *dev);
 #if defined(CONFIG_USB_HW_PARAM)
 extern unsigned long long *get_hw_param(struct otg_notify *n,
 					enum usb_hw_param index);
@@ -187,6 +197,8 @@ static inline struct otg_notify *get_otg_notify(void) {return NULL; }
 static inline int set_otg_notify(struct otg_notify *n) {return 0; }
 static inline void put_otg_notify(struct otg_notify *n) {}
 static inline bool is_blocked(struct otg_notify *n, int type) {return false; }
+static inline int usb_check_whitelist_for_mdm(struct usb_device *dev)
+			{return 0; }
 #if defined(CONFIG_USB_HW_PARAM)
 static unsigned long long *get_hw_param(struct otg_notify *n,
 			enum usb_hw_param index) {return NULL; }

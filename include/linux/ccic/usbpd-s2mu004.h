@@ -35,9 +35,13 @@
 #if defined(CONFIG_DUAL_ROLE_USB_INTF)
 #define DUAL_ROLE_SET_MODE_WAIT_MS		(2000)
 #endif
-#define S2MU004_WATER_CHK_INTERVAL_TIME		(200)
+#define S2MU004_WATER_CHK_INTERVAL_TIME		(300)
 
-#define WATER_CHK_RETRY_CNT	5
+#define WATER_CHK_RETRY_CNT	2
+#define IS_CC_RP(cc1, cc2)	((cc1 == USBPD_Rp) && (cc2 == USBPD_Rp))
+#define IS_CC_WATER(cc1, cc2)	((cc1 != USBPD_Rp) && (cc2 != USBPD_Rp))
+#define IS_ONLY_CC1_WATER(cc1, cc2)	((cc1 != USBPD_Rp) && (cc2 == USBPD_Rp))
+#define IS_ONLY_CC2_WATER(cc1, cc2)	((cc1 == USBPD_Rp) && (cc2 != USBPD_Rp))
 
 /*****************************************/
 /***********DEFINITION REGISTER***********/
@@ -265,6 +269,7 @@
 #define ENABLED_INT_4	(S2MU004_REG_INT_STATUS4_USB_DETACH |\
 				S2MU004_REG_INT_STATUS4_PLUG_IRQ |\
 				S2MU004_REG_INT_STATUS4_MSG_PASS)
+#define ENABLED_INT_5   (S2MU004_REG_INT_STATUS5_HARD_RESET)
 
 /* S2MU004 I2C registers */
 enum s2mu004_usbpd_reg {

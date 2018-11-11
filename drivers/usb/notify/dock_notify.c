@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
- /* usb notify layer v3.0 */
+ /* usb notify layer v3.2 */
 
 #define pr_fmt(fmt) "usb_notify: " fmt
 
@@ -50,7 +50,7 @@ static struct dev_table essential_device_table[] = {
 	}, /* TI USB Audio DAC 2 */
 	{ .dev = { USB_DEVICE(0x0424, 0xec00), },
 	   .index = MMDOCK_INDEX,
-	}, /* Knox Desktop */
+	}, /* SMSC LAN Driver */
 	{}
 };
 
@@ -90,12 +90,12 @@ static int check_gamepad_device(struct usb_device *dev)
 {
 	int ret = 0;
 
- 	pr_info("%s : product=%s\n", __func__, dev->product);
+	pr_info("%s : product=%s\n", __func__, dev->product);
 
 	if (!dev->product)
 		return ret;
 
-	if (!strncmp(dev->product , "Gamepad for SAMSUNG", 19))
+	if (!strncmp(dev->product, "Gamepad for SAMSUNG", 19))
 		ret = 1;
 
 	return ret;
@@ -110,7 +110,7 @@ static int check_lanhub_device(struct usb_device *dev)
 	if (!dev->product)
 		return ret;
 
-	if (!strncmp(dev->product , "LAN9512", 8))
+	if (!strncmp(dev->product, "LAN9512", 8))
 		ret = 1;
 
 	return ret;
@@ -222,11 +222,7 @@ static int call_device_notify(struct usb_device *dev)
 	struct otg_notify *o_notify = get_otg_notify();
 
 	if (dev->bus->root_hub != dev) {
-
 		pr_info("%s device\n", __func__);
-
-
-
 		send_otg_notify(o_notify, NOTIFY_EVENT_DEVICE_CONNECT, 1);
 
 		if (check_gamepad_device(dev))
@@ -287,21 +283,21 @@ static void check_device_speed(struct usb_device *dev, bool on)
 	o_notify->speed = speed;
 
 	switch (speed) {
-		case USB_SPEED_SUPER:
-			pr_info("%s : %s superspeed device\n",
-				__func__, (on ? "attached" : "detached"));
+	case USB_SPEED_SUPER:
+		pr_info("%s : %s superspeed device\n",
+			__func__, (on ? "attached" : "detached"));
 		break;
-		case USB_SPEED_HIGH:
-			pr_info("%s : %s highspeed device\n",
-				__func__, (on ? "attached" : "detached"));
+	case USB_SPEED_HIGH:
+		pr_info("%s : %s highspeed device\n",
+			__func__, (on ? "attached" : "detached"));
 		break;
-		case USB_SPEED_FULL:
-			pr_info("%s : %s fullspeed device\n",
-				__func__, (on ? "attached" : "detached"));
+	case USB_SPEED_FULL:
+		pr_info("%s : %s fullspeed device\n",
+			__func__, (on ? "attached" : "detached"));
 		break;
-		case USB_SPEED_LOW:
-			pr_info("%s : %s lowspeed device\n",
-				__func__, (on ? "attached" : "detached"));
+	case USB_SPEED_LOW:
+		pr_info("%s : %s lowspeed device\n",
+			__func__, (on ? "attached" : "detached"));
 		break;
 	}
 }
@@ -312,16 +308,20 @@ static int set_hw_param(struct usb_device *dev)
 	struct otg_notify *o_notify = get_otg_notify();
 	int ret = 0;
 	int bInterfaceClass = 0, speed = 0;
+
 	if (o_notify == NULL || dev->config->interface[0] == NULL) {
 		ret =  -EFAULT;
 		goto err;
 	}
+
 	if (dev->bus->root_hub != dev) {
 		bInterfaceClass = dev->config->interface[0]->
 					cur_altsetting->desc.bInterfaceClass;
 		speed = dev->speed;
+
 		pr_info("%s USB device connected - Class : 0x%x, speed : 0x%x\n",
 			__func__, bInterfaceClass, speed);
+
 		if (bInterfaceClass == USB_CLASS_AUDIO)
 			inc_hw_param(o_notify, USB_HOST_CLASS_AUDIO_COUNT);
 		else if (bInterfaceClass == USB_CLASS_COMM)
@@ -354,6 +354,7 @@ static int set_hw_param(struct usb_device *dev)
 			inc_hw_param(o_notify, USB_HOST_CLASS_APP_COUNT);
 		else if (bInterfaceClass == USB_CLASS_VENDOR_SPEC)
 			inc_hw_param(o_notify, USB_HOST_CLASS_VENDOR_COUNT);
+
 		if (speed == USB_SPEED_SUPER)
 			inc_hw_param(o_notify, USB_HOST_SUPER_SPEED_COUNT);
 		else if (speed == USB_SPEED_HIGH)
