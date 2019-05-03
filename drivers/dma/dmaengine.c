@@ -494,9 +494,10 @@ static struct dma_chan *private_candidate(const dma_cap_mask_t *mask,
 
 	list_for_each_entry(chan, &dev->channels, device_node) {
 		if (chan->client_count) {
-			pr_debug("%s: %s busy\n",
-				 __func__, dma_chan_name(chan));
-			continue;
+		    pr_debug("%s: %s busy (%i)\n",
+				 __func__, dma_chan_name(chan), chan->client_count);
+			/* Skipping "busy" DMA channels crashes the kernel, seems to work fine without skipping */
+			//continue;
 		}
 		if (fn && !fn(chan, fn_param)) {
 			pr_debug("%s: %s filter said false\n",
