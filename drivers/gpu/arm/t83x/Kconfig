@@ -33,7 +33,7 @@ choice
 	default MALI_R12P0 if DDK_VERSION_OS = "m"
 	default MALI_R15P0 if DDK_VERSION_OS = "n"
 	default MALI_R22P0 if DDK_VERSION_OS = "o"
-	default MALI_R22P0 if DDK_VERSION_OS = "p"
+	default MALI_R28P0 if DDK_VERSION_OS = "p"
 	help
 	  Select the gpu support version.
 

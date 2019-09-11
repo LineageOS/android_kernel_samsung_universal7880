@@ -292,6 +292,12 @@ static void kbase_pm_invoke(struct kbase_device *kbdev,
 			}
 	}
 
+/* MALI_SEC_INTEGRATION */
+#if PLATFORM_POWER_DOWN_ONLY
+	if (action == ACTION_PWROFF)
+		return;
+#endif
+
 	if (lo != 0)
 		kbase_reg_write(kbdev, GPU_CONTROL_REG(reg), lo);
 
@@ -649,7 +655,10 @@ static u64 kbase_pm_l2_update_state(struct kbase_device *kbdev)
 
 	if (kbdev->pm.backend.invoke_poweroff_wait_wq_when_l2_off &&
 			backend->l2_state == KBASE_L2_OFF) {
-		KBASE_TRACE_ADD(kbdev, PM_GPU_OFF_QUEUE_WORK, NULL, NULL, 0u, 0u);
+
+		/* MALI_SEC_INTEGRATION */
+		KBASE_TRACE_ADD(kbdev, KBASE_DEVICE_PM_WAIT_WQ_QUEUE_WORK, NULL, NULL, 0u, 0u);
+
 		kbdev->pm.backend.invoke_poweroff_wait_wq_when_l2_off = false;
 		queue_work(kbdev->pm.backend.gpu_poweroff_wait_wq,
 				&kbdev->pm.backend.gpu_poweroff_wait_work);
