@@ -51,8 +51,11 @@
 #include <linux/muic/muic_notifier.h>
 #include <linux/vbus_notifier.h>
 #endif
+#ifdef CONFIG_FB
+#include <linux/notifier.h>
+#include <linux/fb.h>
+#endif
 
-#define CONFIG_INPUT_ENABLED
 #define SEC_FACTORY_TEST
 
 #define NOT_SUPPORTED_TOUCH_DUMMY_KEY
@@ -77,7 +80,7 @@
 
 extern char *saved_command_line;
 
-#define ZINITIX_DEBUG				0
+#define ZINITIX_DEBUG				1
 #define PDIFF_DEBUG					1
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 #define USE_MISC_DEVICE
@@ -758,6 +761,9 @@ struct bt532_ts_info {
 	bool tsp_pwr_enabled;
 #ifdef CONFIG_VBUS_NOTIFIER
 	struct notifier_block vbus_nb;
+#endif
+#ifdef CONFIG_FB
+	struct notifier_block fb_notif;
 #endif
 	u8 cover_type;
 	bool	flip_enable;
@@ -2318,6 +2324,11 @@ fw_request_fail:
 	return ret;
 }
 
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+	unsigned long event, void *data);
+#endif
+
 static bool init_touch(struct bt532_ts_info *info)
 {
 	struct bt532_ts_platform_data *pdata = info->pdata;
@@ -2376,6 +2387,11 @@ static bool init_touch(struct bt532_ts_info *info)
 	input_info(true, &info->client->dev, "%s: tsp_test=%x pat_function=%d afe_base=%04X cal_count=%X tune_fix_ver=%04X\n", 
 					__func__, info->test_result.data[0], info->pdata->pat_function, info->pdata->afe_base, 
 					info->cap_info.cal_count, info->cap_info.tune_fix_ver);
+#ifdef CONFIG_FB
+	info->fb_notif.notifier_call = fb_notifier_callback;
+	if (fb_register_client(&info->fb_notif))
+		pr_err("%s: could not create fb notifier\n", __func__);
+#endif
 	return true;
 fail_init:
 	return false;
@@ -2444,7 +2460,7 @@ static bool mini_init_touch(struct bt532_ts_info *info)
 		}
 	}
 
-	input_info(true, &client->dev, "Successfully mini initialized\r\n");
+	input_info(true, &client->dev, "Successfully mini initialized\n");
 	return true;
 
 fail_mini_init:
@@ -3194,6 +3210,39 @@ static int bt532_ts_suspend(struct device *dev)
 	zinitix_printk("suspend--\n");
 #endif
 	up(&info->work_lock);
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+				unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	struct bt532_ts_info *tc_data = container_of(self, struct bt532_ts_info, fb_notif);
+
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		int *blank = evdata->data;
+		switch (*blank) {
+		case FB_BLANK_UNBLANK:
+		case FB_BLANK_NORMAL:
+		case FB_BLANK_VSYNC_SUSPEND:
+		case FB_BLANK_HSYNC_SUSPEND:
+			if (!tc_data->input_dev->disabled) {
+				bt532_ts_resume(&tc_data->client->dev);
+			}
+			break;
+		case FB_BLANK_POWERDOWN:
+			if (!tc_data->input_dev->disabled) {
+				bt532_ts_suspend(&tc_data->client->dev);
+			}
+			break;
+		default:
+			/* Don't handle what we don't understand */
+			break;
+		}
+	}
 
 	return 0;
 }
@@ -7862,6 +7911,9 @@ static int bt532_ts_remove(struct i2c_client *client)
 		free_irq(info->irq, info);
 #ifdef USE_MISC_DEVICE
 	misc_deregister(&touch_misc_device);
+#endif
+#ifdef CONFIG_FB
+	fb_unregister_client(&info->fb_notif);
 #endif
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	unregister_early_suspend(&info->early_suspend);
