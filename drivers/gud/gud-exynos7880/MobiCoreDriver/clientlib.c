@@ -289,7 +289,7 @@ enum mc_result mc_wait_notification(struct mc_session_handle *session,
 	do {
 		ret = convert(client_waitnotif_session(client,
 						       session->session_id,
-					       timeout, false));
+						       timeout, false));
 	} while ((MC_INFINITE_TIMEOUT == timeout) &&
 		 (MC_DRV_ERR_INTERRUPTED_BY_SIGNAL == ret));
 

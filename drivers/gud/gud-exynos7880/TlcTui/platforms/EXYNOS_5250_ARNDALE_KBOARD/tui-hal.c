@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015 TRUSTONIC LIMITED
+ * Copyright (c) 2014-2017 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -25,7 +25,6 @@
 #include "tlcTui.h"
 #include "tui-hal.h"
 
-
 #define TUI_MEMPOOL_SIZE 0
 
 struct tui_mempool {
@@ -48,11 +47,14 @@ static bool allocate_tui_memory_pool(struct tui_mempool *pool, size_t size)
 	}
 
 	tui_mem_pool = kmalloc(size, GFP_KERNEL);
-	if (!tui_mem_pool) {
-		pr_debug("ERROR Could not allocate TUI memory pool");
-	} else if (ksize(tui_mem_pool) < size) {
-		pr_err("TUI mem pool size too small: req'd=%d alloc'd=%d", size,
-		       ksize(tui_mem_pool));
+	if (!tui_mem_pool)
+		return ret;
+
+	if (ksize(tui_mem_pool) < size) {
+		pr_debug(
+			"ERROR TUI memory pool allocated size is too small.\t"
+			"required=%zd allocated=%zd",
+			size, ksize(tui_mem_pool));
 		kfree(tui_mem_pool);
 	} else {
 		pool->va = tui_mem_pool;
@@ -81,7 +83,7 @@ static struct device *get_fb_dev(void)
 	/* get the first framebuffer device */
 	/* [TODO] Handle properly when there are more than one framebuffer */
 	fbdev = class_find_device(fb_class, NULL, NULL, is_device_ok);
-	if (NULL == fbdev) {
+	if (!fbdev) {
 		pr_debug("ERROR cannot get framebuffer device\n");
 		return NULL;
 	}
@@ -181,7 +183,7 @@ static void unblank_framebuffer(int releaseref)
 		pm_runtime_put_sync(sfb->dev);
 }
 
-uint32_t hal_tui_init(void)
+u32 hal_tui_init(void)
 {
 	/* Allocate memory pool for the framebuffer
 	 */
@@ -198,11 +200,11 @@ void hal_tui_exit(void)
 		free_tui_memory_pool(&g_tui_mem_pool);
 }
 
-uint32_t hal_tui_alloc(
+u32 hal_tui_alloc(
 	struct tui_alloc_buffer_t allocbuffer[MAX_DCI_BUFFER_NUMBER],
-	size_t allocsize, uint32_t number)
+	size_t allocsize, u32 number)
 {
-	uint32_t ret = TUI_DCI_ERR_INTERNAL_ERROR;
+	u32 ret = TUI_DCI_ERR_INTERNAL_ERROR;
 
 	if (!allocbuffer) {
 		pr_debug("%s(%d): allocbuffer is null\n", __func__, __LINE__);
@@ -223,21 +225,24 @@ uint32_t hal_tui_alloc(
 		return TUI_DCI_ERR_INTERNAL_ERROR;
 	}
 
-	if ((size_t)(allocsize*number) <= g_tui_mem_pool.size) {
+	if ((size_t)(allocsize * number) <= g_tui_mem_pool.size) {
 		/* requested buffer fits in the memory pool */
 		unsigned int i;
+
 		for (i = 0; i < number; i++) {
 			pr_info("%s(%d): allocbuffer + %d = 0x%p\n", __func__,
-				__LINE__, i, allocbuffer+i);
+				__LINE__, i, allocbuffer + i);
 			allocbuffer[i].pa =
-				(uint64_t) (g_tui_mem_pool.pa + i * allocsize);
+				(u64)(g_tui_mem_pool.pa + i * allocsize);
 			pr_info("%s(%d): allocated at %llx\n", __func__,
 				__LINE__, allocbuffer[i].pa);
 		}
 		ret = TUI_DCI_OK;
 	} else {
-		/* requested buffer is bigger than the memory pool, return an
-		   error */
+		/*
+		 * requested buffer is bigger than the memory pool, return an
+		 * error
+		 */
 		pr_debug("%s(%d): Memory pool too small\n", __func__, __LINE__);
 		ret = TUI_DCI_ERR_INTERNAL_ERROR;
 	}
@@ -249,7 +254,7 @@ void hal_tui_free(void)
 {
 }
 
-uint32_t hal_tui_deactivate(void)
+u32 hal_tui_deactivate(void)
 {
 	/* Set linux TUI flag */
 	trustedui_set_mask(TRUSTEDUI_MODE_TUI_SESSION);
@@ -257,25 +262,28 @@ uint32_t hal_tui_deactivate(void)
 #ifdef CONFIG_TRUSTONIC_TRUSTED_UI_FB_BLANK
 	blank_framebuffer(1);
 	/* TODO-[2014-03-19]-julare01: disabled for Arndale board but this
-	 * should be re enabled and put into a HAL */
+	 * should be re enabled and put into a HAL
+	 */
 /*		disable_irq(gpio_to_irq(190)); */
 #endif
-	trustedui_set_mask(TRUSTEDUI_MODE_VIDEO_SECURED|
+	trustedui_set_mask(TRUSTEDUI_MODE_VIDEO_SECURED |
 			   TRUSTEDUI_MODE_INPUT_SECURED);
 
 	return TUI_DCI_OK;
 }
 
-uint32_t hal_tui_activate(void)
+u32 hal_tui_activate(void)
 {
 	/* Protect NWd */
-	trustedui_clear_mask(TRUSTEDUI_MODE_VIDEO_SECURED|
+	trustedui_clear_mask(TRUSTEDUI_MODE_VIDEO_SECURED |
 			     TRUSTEDUI_MODE_INPUT_SECURED);
 
 #ifdef CONFIG_TRUSTONIC_TRUSTED_UI_FB_BLANK
 	pr_info("Unblanking\n");
-	/* TODO-[2014-03-19]-julare01: disabled for Arndale board but this
-	 * should be re enabled and put into a HAL */
+	/*
+	 * TODO-[2014-03-19]-julare01: disabled for Arndale board but this
+	 * should be re enabled and put into a HAL
+	 */
 /*		enable_irq(gpio_to_irq(190));*/
 	unblank_framebuffer(1);
 #endif
@@ -286,7 +294,7 @@ uint32_t hal_tui_activate(void)
 #ifdef CONFIG_TRUSTONIC_TRUSTED_UI_FB_BLANK
 	pr_info("Unsetting TUI flag (blank counter=%d)",
 		trustedui_blank_get_counter());
-	if (0 < trustedui_blank_get_counter())
+	if (trustedui_blank_get_counter() > 0)
 		blank_framebuffer(0);
 #endif
 
