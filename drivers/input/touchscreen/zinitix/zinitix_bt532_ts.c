@@ -51,6 +51,10 @@
 #include <linux/muic/muic_notifier.h>
 #include <linux/vbus_notifier.h>
 #endif
+#ifdef CONFIG_FB
+#include <linux/notifier.h>
+#include <linux/fb.h>
+#endif
 
 #define CONFIG_INPUT_ENABLED
 #define SEC_FACTORY_TEST
@@ -758,6 +762,9 @@ struct bt532_ts_info {
 	bool tsp_pwr_enabled;
 #ifdef CONFIG_VBUS_NOTIFIER
 	struct notifier_block vbus_nb;
+#endif
+#ifdef CONFIG_FB
+	struct notifier_block fb_notif;
 #endif
 	u8 cover_type;
 	bool	flip_enable;
@@ -3110,7 +3117,7 @@ static void bt532_ts_early_suspend(struct early_suspend *h)
 }
 #endif	/* CONFIG_HAS_EARLYSUSPEND */
 
-#if (defined(CONFIG_PM) || defined(CONFIG_HAS_EARLYSUSPEND)) &&!defined(CONFIG_INPUT_ENABLED)
+#if (defined(CONFIG_PM) || defined(CONFIG_HAS_EARLYSUSPEND))
 static int bt532_ts_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
@@ -3194,6 +3201,35 @@ static int bt532_ts_suspend(struct device *dev)
 	zinitix_printk("suspend--\n");
 #endif
 	up(&info->work_lock);
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+				unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	struct bt532_ts_info *tc_data = container_of(self, struct bt532_ts_info, fb_notif);
+
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		int *blank = evdata->data;
+		switch (*blank) {
+		case FB_BLANK_UNBLANK:
+		case FB_BLANK_NORMAL:
+		case FB_BLANK_VSYNC_SUSPEND:
+		case FB_BLANK_HSYNC_SUSPEND:
+			bt532_ts_resume(&tc_data->client->dev);
+			break;
+		case FB_BLANK_POWERDOWN:
+			bt532_ts_suspend(&tc_data->client->dev);
+			break;
+		default:
+			/* Don't handle what we don't understand */
+			break;
+		}
+	}
 
 	return 0;
 }
@@ -7528,6 +7564,11 @@ static int bt532_ts_probe_dt(struct device_node *np,
 }
 #endif
 
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+	unsigned long event, void *data);
+#endif
+
 static int bt532_ts_probe(struct i2c_client *client,
 		const struct i2c_device_id *i2c_id)
 {
@@ -7811,6 +7852,11 @@ err_kthread_create_failed:
 #ifdef USE_MISC_DEVICE
 err_misc_register:
 #endif
+#ifdef CONFIG_FB
+	info->fb_notif.notifier_call = fb_notifier_callback;
+	if (fb_register_client(&info->fb_notif))
+		pr_err("%s: could not create fb notifier\n", __func__);
+#endif
 	free_irq(info->irq, info);
 err_request_irq:
 error_gpio_irq:
@@ -7862,6 +7908,9 @@ static int bt532_ts_remove(struct i2c_client *client)
 		free_irq(info->irq, info);
 #ifdef USE_MISC_DEVICE
 	misc_deregister(&touch_misc_device);
+#endif
+#ifdef CONFIG_FB
+	fb_unregister_client(&info->fb_notif);
 #endif
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	unregister_early_suspend(&info->early_suspend);
