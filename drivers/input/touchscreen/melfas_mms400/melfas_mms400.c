@@ -1162,6 +1162,11 @@ static int mms_init_config(struct mms_ts_info *info)
 	return 0;
 }
 
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+	unsigned long event, void *data);
+#endif
+
 /**
  * Initialize driver
  */
@@ -1391,6 +1396,11 @@ err_test_sysfs_create:
 	class_destroy(info->class);
 err_test_dev_create:
 #endif
+#ifdef CONFIG_FB
+	info->fb_notif.notifier_call = fb_notifier_callback;
+	if (fb_register_client(&info->fb_notif))
+		pr_err("%s: could not create fb notifier\n", __func__);
+#endif
 	mms_disable(info);
 	free_irq(info->irq, info);
 	wake_lock_destroy(&info->wakelock);
@@ -1448,6 +1458,10 @@ static int mms_remove(struct i2c_client *client)
 	class_destroy(info->class);
 #endif
 
+#ifdef CONFIG_FB
+	fb_unregister_client(&info->fb_notif);
+#endif
+
 	input_unregister_device(info->input_dev);
 
 	kfree(info->fw_name);
@@ -1464,7 +1478,7 @@ static void mms_shutdown(struct i2c_client *client)
 	mms_disable(info);
 }
 
-#ifdef CONFIG_PM
+#if defined(CONFIG_PM)
 static int mms_suspend(struct device *dev)
 {
 	struct mms_ts_info *info = dev_get_drvdata(dev);
@@ -1485,9 +1499,40 @@ static int mms_resume(struct device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+				unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	struct mms_ts_info *tc_data = container_of(self, struct mms_ts_info, fb_notif);
+
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		int *blank = evdata->data;
+		switch (*blank) {
+		case FB_BLANK_UNBLANK:
+		case FB_BLANK_NORMAL:
+		case FB_BLANK_VSYNC_SUSPEND:
+		case FB_BLANK_HSYNC_SUSPEND:
+			mms_resume(&tc_data->client->dev);
+			break;
+		case FB_BLANK_POWERDOWN:
+			mms_suspend(&tc_data->client->dev);
+			break;
+		default:
+			/* Don't handle what we don't understand */
+			break;
+		}
+	}
+
+	return 0;
+}
+#endif
+
 static const struct dev_pm_ops mms_dev_pm_ops = {
+#if !defined(CONFIG_FB)
 	.suspend = mms_suspend,
 	.resume = mms_resume,
+#endif
 };
 #endif
 
