@@ -54,6 +54,11 @@
 #include <linux/input/input_booster.h>
 #endif
 
+#ifdef CONFIG_FB
+#include <linux/notifier.h>
+#include <linux/fb.h>
+#endif
+
 #ifdef CONFIG_OF
 #define MMS_USE_DEVICETREE		1
 #else
@@ -257,6 +262,9 @@ struct mms_ts_info {
 	struct delayed_work switching_work;
 	struct notifier_block hall_ic_nb;
 #endif
+#ifdef CONFIG_FB
+	struct notifier_block fb_notif;
+#endif
 	bool flip_enable;
 	int cover_type;
 
@@ -266,7 +274,7 @@ struct mms_ts_info {
 	struct wake_lock wakelock;
 	int ic_status;
 	unsigned int scrub_id;
-	unsigned int scrub_x;	
+	unsigned int scrub_x;
 	unsigned int scrub_y;
 
 	u8 ito_test[4];

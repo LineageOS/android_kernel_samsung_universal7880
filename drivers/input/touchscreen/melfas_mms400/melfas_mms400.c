@@ -1162,6 +1162,11 @@ static int mms_init_config(struct mms_ts_info *info)
 	return 0;
 }
 
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+	unsigned long event, void *data);
+#endif
+
 /**
  * Initialize driver
  */
@@ -1367,6 +1372,11 @@ static int mms_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	INIT_DELAYED_WORK(&info->ghost_check, mms_ghost_touch_check);
 	p_ghost_check = &info->ghost_check;
 #endif
+#ifdef CONFIG_FB
+	info->fb_notif.notifier_call = fb_notifier_callback;
+	if (fb_register_client(&info->fb_notif))
+		pr_err("%s: could not create fb notifier\n", __func__);
+#endif
 	device_init_wakeup(&client->dev, true);
 	info->init = false;
 	info->ic_status = PWR_ON;
@@ -1448,6 +1458,10 @@ static int mms_remove(struct i2c_client *client)
 	class_destroy(info->class);
 #endif
 
+#ifdef CONFIG_FB
+	fb_unregister_client(&info->fb_notif);
+#endif
+
 	input_unregister_device(info->input_dev);
 
 	kfree(info->fw_name);
@@ -1484,6 +1498,35 @@ static int mms_resume(struct device *dev)
 	}
 	return 0;
 }
+
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+				unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	struct mms_ts_info *tc_data = container_of(self, struct mms_ts_info, fb_notif);
+
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		int *blank = evdata->data;
+		switch (*blank) {
+		case FB_BLANK_UNBLANK:
+		case FB_BLANK_NORMAL:
+		case FB_BLANK_VSYNC_SUSPEND:
+		case FB_BLANK_HSYNC_SUSPEND:
+			mms_input_open(tc_data->input_dev);
+			break;
+		case FB_BLANK_POWERDOWN:
+			mms_input_close(tc_data->input_dev);
+			break;
+		default:
+			/* Don't handle what we don't understand */
+			break;
+		}
+	}
+
+	return 0;
+}
+#endif
 
 static const struct dev_pm_ops mms_dev_pm_ops = {
 	.suspend = mms_suspend,
