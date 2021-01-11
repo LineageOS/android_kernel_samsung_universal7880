@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "d31834df_82d7e658",
+        "filename": "drivers/input/touchscreen/zinitix/zinitix_bt532_ts.c",
+        "patchSetId": 6
+      },
+      "lineNbr": 3232,
+      "author": {
+        "id": 11801
+      },
+      "writtenOn": "2021-01-11T22:51:31Z",
+      "side": 1,
+      "message": "???\n\"if enabled, resume\"\n???",
+      "revId": "c5cee1a983e1fc9bb37e92194aa6aef1ea1a16d1",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": true
+    },
+    {
+      "key": {
+        "uuid": "3f0071f8_9d107d22",
+        "filename": "drivers/input/touchscreen/zinitix/zinitix_bt532_ts.c",
+        "patchSetId": 6
+      },
+      "lineNbr": 3237,
+      "author": {
+        "id": 11801
+      },
+      "writtenOn": "2021-01-11T22:51:31Z",
+      "side": 1,
+      "message": "Why is this var being used anyways? I see nothing in the TS code that sets it, so why not just leave it alone and resume/suspend solely based on FB notifier state?",
+      "revId": "c5cee1a983e1fc9bb37e92194aa6aef1ea1a16d1",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": true
+    }
+  ]
+}
