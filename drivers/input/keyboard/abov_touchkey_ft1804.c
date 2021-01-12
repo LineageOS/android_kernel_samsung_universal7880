@@ -55,6 +55,11 @@
 #include <linux/vbus_notifier.h>
 #endif
 
+#ifdef CONFIG_FB
+#include <linux/notifier.h>
+#include <linux/fb.h>
+#endif
+
 /* registers */
 #define ABOV_BTNSTATUS		0x00
 #define ABOV_FW_VER			0x01
@@ -209,6 +214,9 @@ struct abov_tk_info {
 	char light_version_full_bin[LIGHT_VERSION_LEN];
 	int light_table_crc;
 	u8 light_reg;
+#endif
+#ifdef CONFIG_FB
+	struct notifier_block fb_notif;
 #endif
 };
 
@@ -3236,6 +3244,11 @@ static int abov_parse_dt(struct device *dev,
 }
 #endif
 
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+	unsigned long event, void *data);
+#endif
+
 static int abov_tk_probe(struct i2c_client *client,
 				  const struct i2c_device_id *id)
 {
@@ -3502,6 +3515,12 @@ static int abov_tk_probe(struct i2c_client *client,
 	schedule_delayed_work(&info->efs_open_work, msecs_to_jiffies(2000));
 #endif
 
+#ifdef CONFIG_FB
+	info->fb_notif.notifier_call = fb_notifier_callback;
+	if (fb_register_client(&info->fb_notif))
+		pr_err("%s: could not create fb notifier\n", __func__);
+#endif
+
 	return 0;
 
 err_req_irq:
@@ -3571,6 +3590,9 @@ static int abov_tk_remove(struct i2c_client *client)
 		free_irq(info->irq, info);
 	input_unregister_device(info->input_dev);
 	input_free_device(info->input_dev);
+#ifdef CONFIG_FB
+	fb_unregister_client(&info->fb_notif);
+#endif	
 	kfree(info);
 
 	return 0;
@@ -3744,6 +3766,35 @@ static void abov_tk_input_close(struct input_dev *dev)
 	info->led_twinkle_check = 0;
 #endif
 
+}
+#endif
+
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+				unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	struct abov_tk_info *tc_info = container_of(self, struct abov_tk_info, fb_notif);
+
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		int *blank = evdata->data;
+		switch (*blank) {
+		case FB_BLANK_UNBLANK:
+		case FB_BLANK_NORMAL:
+		case FB_BLANK_VSYNC_SUSPEND:
+		case FB_BLANK_HSYNC_SUSPEND:
+			abov_tk_input_open(tc_info->input_dev);
+			break;
+		case FB_BLANK_POWERDOWN:
+			abov_tk_input_close(tc_info->input_dev);
+			break;
+		default:
+			/* Don't handle what we don't understand */
+			break;
+		}
+	}
+
+	return 0;
 }
 #endif
 
