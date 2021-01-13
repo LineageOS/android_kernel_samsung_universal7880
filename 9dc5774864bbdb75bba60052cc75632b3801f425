@@ -16,6 +16,24 @@
       "revId": "9dc5774864bbdb75bba60052cc75632b3801f425",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
       "unresolved": true
+    },
+    {
+      "key": {
+        "uuid": "188d7620_01827ddb",
+        "filename": "drivers/input/touchscreen/zinitix/zinitix_bt532_ts.c",
+        "patchSetId": 7
+      },
+      "lineNbr": 60,
+      "author": {
+        "id": 11409
+      },
+      "writtenOn": "2021-01-13T18:27:29Z",
+      "side": 1,
+      "message": "I don\u0027t see an #endif missing, please help.",
+      "parentUuid": "c6011766_c9ce5481",
+      "revId": "9dc5774864bbdb75bba60052cc75632b3801f425",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": true
     }
   ]
 }
