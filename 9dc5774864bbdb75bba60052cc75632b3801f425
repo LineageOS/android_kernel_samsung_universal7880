@@ -34,6 +34,24 @@
       "revId": "9dc5774864bbdb75bba60052cc75632b3801f425",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
       "unresolved": true
+    },
+    {
+      "key": {
+        "uuid": "bea5717d_8dc8c25f",
+        "filename": "drivers/input/touchscreen/zinitix/zinitix_bt532_ts.c",
+        "patchSetId": 7
+      },
+      "lineNbr": 60,
+      "author": {
+        "id": 25276
+      },
+      "writtenOn": "2021-01-13T20:37:46Z",
+      "side": 1,
+      "message": "Sorry, my tired eyes mixed up \"define\" and \"ifdef\".\nEverything\u0027s fine, sorry for the confusion.",
+      "parentUuid": "188d7620_01827ddb",
+      "revId": "9dc5774864bbdb75bba60052cc75632b3801f425",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": true
     }
   ]
 }
