@@ -101,6 +101,13 @@
 					mnt_flags = "ro,errors=panic,noload";
 					fsmgr_flags = "wait";
 				};
+				efs {
+					compatible = "android,efs";
+					dev = "/dev/block/platform/13540000.dwmmc0/by-name/EFS";
+					type = "ext4";
+					mnt_flags = "noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic";
+					fsmgr_flags = "wait,check";
+				};
 			};
 		};
 	};	
