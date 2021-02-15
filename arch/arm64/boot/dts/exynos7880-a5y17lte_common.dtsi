@@ -88,6 +88,22 @@
 			gpio-key,wakeup = <1>;
 		};
 	};
+	
+	firmware {
+		android {
+			compatible = "android,firmware";
+			fstab {
+				compatible = "android,fstab";
+				system {
+					compatible = "android,system";
+					dev = "/dev/block/platform/13540000.dwmmc0/by-name/SYSTEM";
+					type = "ext4";
+					mnt_flags = "ro,errors=panic,noload";
+					fsmgr_flags = "wait";
+				};
+			};
+		};
+	};	
 
 	pinctrl@139B0000 {
 		/* Warm reset information from AP */
