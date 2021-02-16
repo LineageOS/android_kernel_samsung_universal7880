@@ -1462,6 +1462,12 @@ out:
 
 void crash_kexec(struct pt_regs *regs)
 {
+	static DEFINE_PER_CPU(unsigned char, crash_call_once);
+
+	if (__this_cpu_read(crash_call_once))
+		return;
+	__this_cpu_inc(crash_call_once);
+
 	/* Take the kexec_mutex here to prevent sys_kexec_load
 	 * running on one cpu from replacing the crash kernel
 	 * we are using after a panic on a different cpu.
@@ -1477,8 +1483,10 @@ void crash_kexec(struct pt_regs *regs)
 			crash_setup_regs(&fixed_regs, regs);
 			crash_save_vmcoreinfo();
 			machine_crash_shutdown(&fixed_regs);
+
 			machine_kexec(kexec_crash_image);
 		}
+
 		mutex_unlock(&kexec_mutex);
 	}
 }

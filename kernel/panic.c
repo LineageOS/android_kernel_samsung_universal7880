@@ -23,6 +23,9 @@
 #include <linux/sysrq.h>
 #include <linux/init.h>
 #include <linux/nmi.h>
+#include <linux/exynos-ss.h>
+#include <asm/core_regs.h>
+#include "sched/sched.h"
 #include <linux/console.h>
 
 #define PANIC_TIMER_STEP 100
@@ -72,9 +75,13 @@ void panic(const char *fmt, ...)
 {
 	static DEFINE_SPINLOCK(panic_lock);
 	static char buf[1024];
+	struct pt_regs fixed_regs, pv_regs;
 	va_list args;
 	long i, i_next = 0;
 	int state = 0;
+
+	tracing_off();
+	exynos_trace_stop();
 
 	/*
 	 * Disable local interrupts. This will prevent panic_smp_self_stop
@@ -102,7 +109,16 @@ void panic(const char *fmt, ...)
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
-	pr_emerg("Kernel panic - not syncing: %s\n", buf);
+
+#ifdef CONFIG_SEC_DEBUG_AUTO_SUMMARY
+	if(buf[strlen(buf)-1] == '\n')
+		buf[strlen(buf)-1] = '\0';
+#endif
+
+	pr_auto(ASL5, "Kernel panic - not syncing: %s\n", buf);
+
+	exynos_ss_prepare_panic();
+	exynos_ss_dump_panic(buf, (size_t)strnlen(buf, sizeof(buf)));
 #ifdef CONFIG_DEBUG_BUGVERBOSE
 	/*
 	 * Avoid nested stack-dumping if a panic occurs during oops processing
@@ -110,7 +126,10 @@ void panic(const char *fmt, ...)
 	if (!test_taint(TAINT_DIE) && oops_in_progress <= 1)
 		dump_stack();
 #endif
-
+#ifdef CONFIG_SCHED_DEBUG
+	sysrq_sched_debug_show();
+#endif
+#if 0
 	/*
 	 * If we have crashed and we have a crash kernel loaded let it handle
 	 * everything else.
@@ -119,6 +138,11 @@ void panic(const char *fmt, ...)
 	 */
 	if (!crash_kexec_post_notifiers)
 		crash_kexec(NULL);
+#endif
+	crash_setup_regs(&fixed_regs, NULL);
+	memcpy(&pv_regs, &fixed_regs, sizeof(struct pt_regs));
+	crash_save_vmcoreinfo();
+	machine_crash_shutdown(&fixed_regs);
 
 	/*
 	 * Note smp_send_stop is the usual smp shutdown function, which
@@ -134,6 +158,9 @@ void panic(const char *fmt, ...)
 	atomic_notifier_call_chain(&panic_notifier_list, 0, buf);
 
 	kmsg_dump(KMSG_DUMP_PANIC);
+
+	exynos_cs_show_pcval();
+	exynos_ss_post_panic(&pv_regs);
 
 	/*
 	 * If you doubt kdump always works fine in any situation,

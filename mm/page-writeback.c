@@ -38,6 +38,7 @@
 #include <linux/sched/rt.h>
 #include <linux/mm_inline.h>
 #include <trace/events/writeback.h>
+#include <linux/version.h>
 
 #include "internal.h"
 
@@ -70,13 +71,21 @@ static long ratelimit_pages = 32;
 /*
  * Start background writeback (via writeback threads) at this percentage
  */
-int dirty_background_ratio = 10;
+#ifdef CONFIG_LARGE_DIRTY_BUFFER
+int dirty_background_ratio = 5;
+#else
+int dirty_background_ratio;
+#endif
 
 /*
  * dirty_background_bytes starts at 0 (disabled) so that it is a function of
  * dirty_background_ratio * the amount of dirtyable memory
  */
+#ifdef CONFIG_LARGE_DIRTY_BUFFER
 unsigned long dirty_background_bytes;
+#else
+unsigned long dirty_background_bytes = 25 * 1024 * 1024;
+#endif
 
 /*
  * free highmem will not be subtracted from the total free memory
@@ -87,13 +96,21 @@ int vm_highmem_is_dirtyable;
 /*
  * The generator of dirty data starts writeback at this percentage
  */
+#ifdef CONFIG_LARGE_DIRTY_BUFFER
 int vm_dirty_ratio = 20;
+#else
+int vm_dirty_ratio;
+#endif
 
 /*
  * vm_dirty_bytes starts at 0 (disabled) so that it is a function of
  * vm_dirty_ratio * the amount of dirtyable memory
  */
+#ifdef CONFIG_LARGE_DIRTY_BUFFER
 unsigned long vm_dirty_bytes;
+#else
+unsigned long vm_dirty_bytes = 50 * 1024 * 1024;
+#endif
 
 /*
  * The interval between `kupdate'-style writebacks
@@ -261,7 +278,7 @@ static unsigned long global_dirtyable_memory(void)
  */
 void global_dirty_limits(unsigned long *pbackground, unsigned long *pdirty)
 {
-	const unsigned long available_memory = global_dirtyable_memory();
+	unsigned long available_memory = global_dirtyable_memory();
 	unsigned long background;
 	unsigned long dirty;
 	struct task_struct *tsk;
@@ -270,6 +287,14 @@ void global_dirty_limits(unsigned long *pbackground, unsigned long *pdirty)
 		dirty = DIV_ROUND_UP(vm_dirty_bytes, PAGE_SIZE);
 	else
 		dirty = (vm_dirty_ratio * available_memory) / 100;
+
+#if defined(CONFIG_MAX_DIRTY_THRESH_PAGES) && CONFIG_MAX_DIRTY_THRESH_PAGES > 0
+	if (!vm_dirty_bytes && dirty > CONFIG_MAX_DIRTY_THRESH_PAGES) {
+		dirty = CONFIG_MAX_DIRTY_THRESH_PAGES;
+		/* reduce available memory not to make bg_thresh too high */
+		available_memory = dirty * 100 / vm_dirty_ratio;
+	}
+#endif
 
 	if (dirty_background_bytes)
 		background = DIV_ROUND_UP(dirty_background_bytes, PAGE_SIZE);
@@ -306,6 +331,11 @@ static unsigned long zone_dirty_limit(struct zone *zone)
 			zone_memory / global_dirtyable_memory();
 	else
 		dirty = vm_dirty_ratio * zone_memory / 100;
+
+#if defined(CONFIG_MAX_DIRTY_THRESH_PAGES) && CONFIG_MAX_DIRTY_THRESH_PAGES > 0
+	if (!vm_dirty_bytes && dirty > CONFIG_MAX_DIRTY_THRESH_PAGES)
+		dirty = CONFIG_MAX_DIRTY_THRESH_PAGES;
+#endif
 
 	if (tsk->flags & PF_LESS_THROTTLE || rt_task(tsk))
 		dirty += dirty / 4;
@@ -1492,6 +1522,21 @@ pause:
 					  period,
 					  pause,
 					  start_time);
+
+		/* Do not sleep if the backing device is removed */
+		if (unlikely(!bdi->dev))
+			return;
+
+		/* Just collecting approximate value. No lock required. */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0))
+		bdi->last_thresh = strictlimit ? bdi_thresh : dirty_thresh;
+		bdi->last_nr_dirty = strictlimit ? bdi_dirty : nr_dirty;
+#else
+		bdi->last_thresh = dirty_thresh;
+		bdi->last_nr_dirty = nr_dirty;
+#endif
+		bdi->paused_total += pause;
+
 		__set_current_state(TASK_KILLABLE);
 		io_schedule_timeout(pause);
 

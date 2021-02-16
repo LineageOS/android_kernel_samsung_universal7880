@@ -17,6 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/cpu.h>
 #include <linux/cpu_pm.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -44,7 +45,7 @@
  *     been used to perform kernel mode NEON in the meantime.
  *
  * For (a), we add a 'cpu' field to struct fpsimd_state, which gets updated to
- * the id of the current CPU everytime the state is loaded onto a CPU. For (b),
+ * the id of the current CPU every time the state is loaded onto a CPU. For (b),
  * we add the per-cpu variable 'fpsimd_last_state' (below), which contains the
  * address of the userland FPSIMD state of the task that was loaded onto the CPU
  * the most recently, or NULL if kernel mode NEON has been performed after that.
@@ -126,12 +127,15 @@ void do_fpsimd_exc(unsigned int esr, struct pt_regs *regs)
 
 void fpsimd_thread_switch(struct task_struct *next)
 {
+	struct fpsimd_state *st = &next->thread.fpsimd_state;
+
 	/*
 	 * Save the current FPSIMD state to memory, but only if whatever is in
 	 * the registers is in fact the most recent userland FPSIMD state of
 	 * 'current'.
 	 */
-	if (current->mm && !test_thread_flag(TIF_FOREIGN_FPSTATE))
+	if ((current->mm && !test_thread_flag(TIF_FOREIGN_FPSTATE))
+	     || current->thread.fpsimd_state.preserve)
 		fpsimd_save_state(&current->thread.fpsimd_state);
 
 	if (next->mm) {
@@ -142,8 +146,6 @@ void fpsimd_thread_switch(struct task_struct *next)
 		 * the TIF_FOREIGN_FPSTATE flag so the state will be loaded
 		 * upon the next return to userland.
 		 */
-		struct fpsimd_state *st = &next->thread.fpsimd_state;
-
 		if (__this_cpu_read(fpsimd_last_state) == st
 		    && st->cpu == smp_processor_id())
 			clear_ti_thread_flag(task_thread_info(next),
@@ -152,15 +154,22 @@ void fpsimd_thread_switch(struct task_struct *next)
 			set_ti_thread_flag(task_thread_info(next),
 					   TIF_FOREIGN_FPSTATE);
 	}
+
+	if (st->preserve) {
+		fpsimd_load_state(st);
+		this_cpu_write(fpsimd_last_state, st);
+		st->cpu = smp_processor_id();
+		if (next->mm)
+			set_ti_thread_flag(task_thread_info(next),
+					   TIF_FOREIGN_FPSTATE);
+	}
 }
 
 void fpsimd_flush_thread(void)
 {
-	preempt_disable();
 	memset(&current->thread.fpsimd_state, 0, sizeof(struct fpsimd_state));
 	fpsimd_flush_task_state(current);
 	set_thread_flag(TIF_FOREIGN_FPSTATE);
-	preempt_enable();
 }
 
 /*
@@ -219,6 +228,19 @@ void fpsimd_flush_task_state(struct task_struct *t)
 	t->thread.fpsimd_state.cpu = NR_CPUS;
 }
 
+void fpsimd_set_task_preserve(struct task_struct *t)
+{
+	t->thread.fpsimd_state.preserve = 1;
+}
+
+void fpsimd_set_as_user_current(int using)
+{
+	struct fpsimd_state *st = &current->thread.fpsimd_state;
+
+	if (!in_interrupt() && !st->preserve)
+		st->preserve = using;
+}
+
 #ifdef CONFIG_KERNEL_MODE_NEON
 
 static DEFINE_PER_CPU(struct fpsimd_partial_state, hardirq_fpsimdstate);
@@ -243,8 +265,9 @@ void kernel_neon_begin_partial(u32 num_regs)
 		 * registers.
 		 */
 		preempt_disable();
-		if (current->mm &&
+		if ((current->mm &&
 		    !test_and_set_thread_flag(TIF_FOREIGN_FPSTATE))
+		    || current->thread.fpsimd_state.preserve)
 			fpsimd_save_state(&current->thread.fpsimd_state);
 		this_cpu_write(fpsimd_last_state, NULL);
 	}
@@ -271,13 +294,20 @@ static int fpsimd_cpu_pm_notifier(struct notifier_block *self,
 {
 	switch (cmd) {
 	case CPU_PM_ENTER:
-		if (current->mm && !test_thread_flag(TIF_FOREIGN_FPSTATE))
+		if ((current->mm && !test_thread_flag(TIF_FOREIGN_FPSTATE))
+		     || current->thread.fpsimd_state.preserve)
 			fpsimd_save_state(&current->thread.fpsimd_state);
 		this_cpu_write(fpsimd_last_state, NULL);
 		break;
 	case CPU_PM_EXIT:
 		if (current->mm)
 			set_thread_flag(TIF_FOREIGN_FPSTATE);
+
+		if (current->thread.fpsimd_state.preserve) {
+			fpsimd_load_state(&current->thread.fpsimd_state);
+			this_cpu_write(fpsimd_last_state, &current->thread.fpsimd_state);
+			current->thread.fpsimd_state.cpu = smp_processor_id();
+		}
 		break;
 	case CPU_PM_ENTER_FAILED:
 	default:
@@ -290,7 +320,7 @@ static struct notifier_block fpsimd_cpu_pm_notifier_block = {
 	.notifier_call = fpsimd_cpu_pm_notifier,
 };
 
-static void fpsimd_pm_init(void)
+static void __init fpsimd_pm_init(void)
 {
 	cpu_pm_register_notifier(&fpsimd_cpu_pm_notifier_block);
 }
@@ -299,25 +329,49 @@ static void fpsimd_pm_init(void)
 static inline void fpsimd_pm_init(void) { }
 #endif /* CONFIG_CPU_PM */
 
+#ifdef CONFIG_HOTPLUG_CPU
+static int fpsimd_cpu_hotplug_notifier(struct notifier_block *nfb,
+				       unsigned long action,
+				       void *hcpu)
+{
+	unsigned int cpu = (long)hcpu;
+
+	switch (action) {
+	case CPU_DEAD:
+	case CPU_DEAD_FROZEN:
+		per_cpu(fpsimd_last_state, cpu) = NULL;
+		break;
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block fpsimd_cpu_hotplug_notifier_block = {
+	.notifier_call = fpsimd_cpu_hotplug_notifier,
+};
+
+static inline void fpsimd_hotplug_init(void)
+{
+	register_cpu_notifier(&fpsimd_cpu_hotplug_notifier_block);
+}
+
+#else
+static inline void fpsimd_hotplug_init(void) { }
+#endif
+
 /*
  * FP/SIMD support code initialisation.
  */
 static int __init fpsimd_init(void)
 {
-	u64 pfr = read_cpuid(ID_AA64PFR0_EL1);
-
-	if (pfr & (0xf << 16)) {
+	if (elf_hwcap & HWCAP_FP) {
+		fpsimd_pm_init();
+		fpsimd_hotplug_init();
+	} else {
 		pr_notice("Floating-point is not implemented\n");
-		return 0;
 	}
-	elf_hwcap |= HWCAP_FP;
 
-	if (pfr & (0xf << 20))
+	if (!(elf_hwcap & HWCAP_ASIMD))
 		pr_notice("Advanced SIMD is not implemented\n");
-	else
-		elf_hwcap |= HWCAP_ASIMD;
-
-	fpsimd_pm_init();
 
 	return 0;
 }

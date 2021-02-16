@@ -89,14 +89,28 @@
 #include <asm/smp.h>
 #endif
 
+#ifdef CONFIG_TIMA_RKP
+#include <linux/vmm.h>
+#include <linux/rkp_entry.h> 
+#endif //CONFIG_TIMA_RKP
+
+#ifdef CONFIG_SEC_BSP
+#include <linux/sec_bsp.h>
+#endif
+#ifdef CONFIG_SEC_INITCALL_DEBUG
+#include <linux/sec_ext.h>
+#endif
+
+#ifdef CONFIG_KNOX_KAP
+int boot_mode_security;
+EXPORT_SYMBOL(boot_mode_security);
+#endif
+
 static int kernel_init(void *);
 
 extern void init_IRQ(void);
 extern void fork_init(unsigned long);
 extern void radix_tree_init(void);
-#ifndef CONFIG_DEBUG_RODATA
-static inline void mark_rodata_ro(void) { }
-#endif
 
 /*
  * Debug helper: via this flag we know that we are in 'early bootup code'
@@ -433,6 +447,15 @@ static int __init do_early_param(char *param, char *val, const char *unused)
 		}
 	}
 	/* We accept everything at this stage. */
+#ifdef CONFIG_KNOX_KAP
+	if ((strncmp(param, "androidboot.security_mode", 26) == 0)) {
+		pr_warn("val = %d\n",*val);
+		if ((strncmp(val, "1526595585", 10) == 0)) {
+			pr_info("Security Boot Mode \n");
+			boot_mode_security = 1;
+		}
+	}
+#endif
 	return 0;
 }
 
@@ -497,6 +520,42 @@ static void __init mm_init(void)
 	vmalloc_init();
 }
 
+#ifdef	CONFIG_TIMA_RKP
+extern void* vmm_extra_mem;
+u8 rkp_started = 0;
+static void rkp_init(void)
+{
+	rkp_init_t init;
+	init.magic = RKP_INIT_MAGIC;
+	init.vmalloc_start = VMALLOC_START;
+	init.vmalloc_end = (u64)high_memory;
+	init.init_mm_pgd = (u64)__pa(swapper_pg_dir);
+	init.id_map_pgd = (u64)__pa(idmap_pg_dir);
+	init.rkp_pgt_bitmap = (u64)__pa(rkp_pgt_bitmap);
+	init.rkp_map_bitmap = (u64)__pa(rkp_map_bitmap);
+	init.rkp_pgt_bitmap_size = RKP_PGT_BITMAP_LEN;
+	init.zero_pg_addr = (u64)__pa(empty_zero_page);
+	init._text = (u64) _text;
+	init._etext = (u64) _etext;
+	if (!vmm_extra_mem) {
+		printk(KERN_ERR"Disable RKP: Failed to allocate extra mem\n");
+		return;
+	}
+	init.extra_memory_addr = __pa(vmm_extra_mem);
+	init.extra_memory_size = 0x600000;
+	init._srodata = (u64) __start_rodata;
+	init._erodata =(u64) __end_rodata;
+#if defined(CONFIG_USE_HOST_FD_LIBRARY)
+	init.large_memory = (u32) virt_to_phys(fd_vaddr);
+#else
+	init.large_memory = 0;
+#endif
+	rkp_call(RKP_INIT, (u64)&init, 0, 0, 0, 0);
+	rkp_started = 1;
+	return;
+}
+#endif
+
 asmlinkage __visible void __init start_kernel(void)
 {
 	char *command_line;
@@ -548,6 +607,18 @@ asmlinkage __visible void __init start_kernel(void)
 		parse_args("Setting init args", after_dashes, NULL, 0, -1, -1,
 			   set_init_arg);
 
+
+#ifdef CONFIG_TIMA_RKP
+#ifdef CONFIG_KNOX_KAP
+	if (boot_mode_security)
+		vmm_init();
+	else
+		vmm_disable();
+#else
+	vmm_init();
+#endif //CONFIG_KNOX_KAP
+#endif //CONFIG_TIMA_RKP
+
 	jump_label_init();
 
 	/*
@@ -560,7 +631,9 @@ asmlinkage __visible void __init start_kernel(void)
 	sort_main_extable();
 	trap_init();
 	mm_init();
-
+#ifdef CONFIG_SEC_BSP
+	sec_boot_stat_get_start_kernel();
+#endif
 	/*
 	 * Set up the scheduler prior starting any interrupts (such as the
 	 * timer interrupt). Full topology setup happens at smp_init()
@@ -577,6 +650,10 @@ asmlinkage __visible void __init start_kernel(void)
 		local_irq_disable();
 	idr_init_cache();
 	rcu_init();
+
+	/* trace_printk() and trace points may be used after this */
+	trace_init();
+
 	context_tracking_init();
 	radix_tree_init();
 	/* init some links before init_ISA_irqs() */
@@ -648,6 +725,15 @@ asmlinkage __visible void __init start_kernel(void)
 	init_espfix_bsp();
 #endif
 	thread_info_cache_init();
+
+#ifdef CONFIG_TIMA_RKP
+
+#ifdef CONFIG_KNOX_KAP
+	if (boot_mode_security) 
+#endif
+		rkp_init();
+
+#endif /* CONFIG_TIMA_RKP */
 	cred_init();
 	fork_init(totalram_pages);
 	proc_caches_init();
@@ -774,6 +860,11 @@ static int __init_or_module do_one_initcall_debug(initcall_t fn)
 	printk(KERN_DEBUG "initcall %pF returned %d after %lld usecs\n",
 		 fn, ret, duration);
 
+#ifdef CONFIG_SEC_INITCALL_DEBUG
+	if (SEC_INITCALL_DEBUG_MIN_TIME < duration)
+		sec_initcall_debug_add(fn, duration);
+#endif
+
 	return ret;
 }
 
@@ -786,11 +877,14 @@ int __init_or_module do_one_initcall(initcall_t fn)
 	if (initcall_blacklisted(fn))
 		return -EPERM;
 
+#ifdef CONFIG_SEC_INITCALL_DEBUG
+	ret = do_one_initcall_debug(fn);
+#else
 	if (initcall_debug)
 		ret = do_one_initcall_debug(fn);
 	else
 		ret = fn();
-
+#endif
 	msgbuf[0] = 0;
 
 	if (preempt_count() != count) {
@@ -855,6 +949,10 @@ static void __init do_initcall_level(int level)
 
 	for (fn = initcall_levels[level]; fn < initcall_levels[level+1]; fn++)
 		do_one_initcall(*fn);
+
+#ifdef CONFIG_SEC_BSP
+	sec_boot_stat_add_initcall(initcall_level_names[level]);
+#endif
 }
 
 static void __init do_initcalls(void)
@@ -912,6 +1010,34 @@ static int run_init_process(const char *init_filename)
 		(const char __user *const __user *)envp_init);
 }
 
+#ifdef CONFIG_DEFERRED_INITCALLS
+extern initcall_t __deferred_initcall_start[], __deferred_initcall_end[];
+
+/* call deferred init routines */
+static void __ref do_deferred_initcalls(struct work_struct *work)
+{
+	initcall_t *call;
+	static bool already_run;
+
+	if (already_run) {
+		pr_warn("%s() has already run\n", __func__);
+		return;
+	}
+
+	already_run = true;
+
+	pr_err("Running %s()\n", __func__);
+
+	for (call = __deferred_initcall_start;
+			call < __deferred_initcall_end; call++)
+		do_one_initcall(*call);
+
+	free_initmem();
+}
+
+static DECLARE_WORK(deferred_initcall_work, do_deferred_initcalls);
+#endif
+
 static int try_to_run_init_process(const char *init_filename)
 {
 	int ret;
@@ -926,17 +1052,54 @@ static int try_to_run_init_process(const char *init_filename)
 	return ret;
 }
 
+#ifdef CONFIG_SEC_GPIO_DVS
+extern void gpio_dvs_check_initgpio(void);
+#endif
+ 
 static noinline void __init kernel_init_freeable(void);
+
+#ifdef CONFIG_DEBUG_RODATA
+static bool rodata_enabled = true;
+static int __init set_debug_rodata(char *str)
+{
+	return strtobool(str, &rodata_enabled);
+}
+__setup("rodata=", set_debug_rodata);
+
+static void mark_readonly(void)
+{
+	if (rodata_enabled)
+		mark_rodata_ro();
+	else
+		pr_info("Kernel memory protection disabled.\n");
+}
+#else
+static inline void mark_readonly(void)
+{
+	pr_warn("This architecture does not have kernel memory protection.\n");
+}
+#endif
 
 static int __ref kernel_init(void *unused)
 {
 	int ret;
 
 	kernel_init_freeable();
+#ifdef CONFIG_SEC_GPIO_DVS
+	/************************ Caution !!! ****************************/
+	/* This function must be located in appropriate INIT position
+	 * in accordance with the specification of each BB vendor.
+	 */
+	/************************ Caution !!! ****************************/
+	pr_info("%s: GPIO DVS: check init gpio\n", __func__);
+	gpio_dvs_check_initgpio();
+#endif
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
+#ifndef CONFIG_DEFERRED_INITCALLS
 	free_initmem();
-	mark_rodata_ro();
+#endif
+	mark_readonly();
 	system_state = SYSTEM_RUNNING;
 	numa_default_policy();
 
@@ -944,8 +1107,12 @@ static int __ref kernel_init(void *unused)
 
 	if (ramdisk_execute_command) {
 		ret = run_init_process(ramdisk_execute_command);
-		if (!ret)
+		if (!ret) {
+#ifdef CONFIG_DEFERRED_INITCALLS
+			schedule_work(&deferred_initcall_work);
+#endif
 			return 0;
+		}
 		pr_err("Failed to execute %s (error %d)\n",
 		       ramdisk_execute_command, ret);
 	}
@@ -958,8 +1125,12 @@ static int __ref kernel_init(void *unused)
 	 */
 	if (execute_command) {
 		ret = run_init_process(execute_command);
-		if (!ret)
+		if (!ret) {
+#ifdef CONFIG_DEFERRED_INITCALLS
+			schedule_work(&deferred_initcall_work);
+#endif
 			return 0;
+		}
 		pr_err("Failed to execute %s (error %d).  Attempting defaults...\n",
 			execute_command, ret);
 	}

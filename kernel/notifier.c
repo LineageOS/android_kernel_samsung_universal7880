@@ -5,6 +5,9 @@
 #include <linux/rcupdate.h>
 #include <linux/vmalloc.h>
 #include <linux/reboot.h>
+#include <linux/suspend.h>
+#include <linux/exynos-ss.h>
+#include <trace/events/power.h>
 
 /*
  *	Notifier list for kernel code which wants to be called
@@ -90,7 +93,15 @@ static int notifier_call_chain(struct notifier_block **nl,
 			continue;
 		}
 #endif
+		if (val == PM_SUSPEND_PREPARE || val == PM_POST_SUSPEND) {
+			exynos_ss_suspend(nb->notifier_call, NULL, ESS_FLAG_IN);
+			trace_notifier_pm_suspend(nb, val);
+		}
 		ret = nb->notifier_call(nb, val, v);
+		if (val == PM_SUSPEND_PREPARE || val == PM_POST_SUSPEND) {
+			exynos_ss_suspend(nb->notifier_call, NULL, ESS_FLAG_OUT);
+			trace_notifier_pm_suspend(nb, val);
+		}
 
 		if (nr_calls)
 			(*nr_calls)++;
