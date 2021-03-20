@@ -799,6 +799,7 @@
 		only_once_tune;
 		skip-init-mmc-scan;
 		switch_transfer;
+		non-removable;
 		ignore-phase = <(1 << 7)>;
 		fifo-depth = <0x40>;
 		desc-size = <4>;

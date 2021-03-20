@@ -193,6 +193,7 @@
 		card-detect-type-external;
 		use-broken-voltage;
 		use-fine-tuning;
+		non-removable;
 		ignore-phase = <(1 << 7)>;
 		fifo-depth = <0x40>;
 		card-detect-delay = <200>;
