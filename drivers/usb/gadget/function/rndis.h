@@ -227,4 +227,3 @@ int rndis_init(void);
 void rndis_exit (void);
 
 #endif  /* _LINUX_RNDIS_H */
-
