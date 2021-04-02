@@ -2289,6 +2289,7 @@ void usb_hcd_resume_root_hub (struct usb_hcd *hcd)
 
 	spin_lock_irqsave (&hcd_root_hub_lock, flags);
 	if (hcd->rh_registered) {
+		pm_wakeup_event(&hcd->self.root_hub->dev, 0);
 		set_bit(HCD_FLAG_WAKEUP_PENDING, &hcd->flags);
 		queue_work(pm_wq, &hcd->wakeup_work);
 	}
@@ -2910,7 +2911,6 @@ void usb_remove_hcd(struct usb_hcd *hcd)
 		if (hcd->irq > 0)
 			free_irq(hcd->irq, hcd);
 	}
-
 	usb_deregister_bus(&hcd->self);
 	hcd_buffer_destroy(hcd);
 

@@ -23,9 +23,11 @@
 #include <linux/kernel.h>
 #include <linux/utsname.h>
 #include <linux/platform_device.h>
+
 #ifdef CONFIG_USB_NOTIFY_PROC_LOG
 #include <linux/usblog_proc_notify.h>
 #endif
+
 #include <linux/usb/ch9.h>
 #include <linux/usb/composite.h>
 #include <linux/usb/gadget.h>
@@ -49,6 +51,7 @@
 #include "../function/rndis.c"
 #include "../function/f_dm.c"
 #include "../function/u_ether.c"
+
 
 MODULE_AUTHOR("Mike Lockwood");
 MODULE_DESCRIPTION("Android Composite USB Driver");
@@ -113,8 +116,10 @@ struct android_dev {
 	struct list_head enabled_functions;
 	struct usb_composite_dev *cdev;
 	struct device *dev;
+
 	void (*setup_complete)(struct usb_ep *ep,
 				struct usb_request *req);
+
 	bool enabled;
 	int disable_depth;
 	struct mutex mutex;
@@ -123,6 +128,10 @@ struct android_dev {
 	struct work_struct work;
 #ifdef CONFIG_USB_LOCK_SUPPORT_FOR_MDM
 	int usb_lock;
+#endif
+#ifndef CONFIG_USB_TYPEC_MANAGER_NOTIFIER
+	int usb210_count;
+	int usb310_count;
 #endif
 	char ffs_aliases[256];
 };
@@ -157,7 +166,9 @@ EXPORT_SYMBOL_GPL(is_rndis_use);
 void set_usb_enumeration_state(int state);
 void set_usb_enable_state(void);
 #endif
-
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_CCR_PROTOCOL
+#include "../function/u_ccr.c"
+#endif
 /* String Table */
 static struct usb_string strings_dev[] = {
 	[STRING_MANUFACTURER_IDX].s = manufacturer_string,
@@ -194,6 +205,25 @@ static struct usb_configuration android_config_driver = {
 	.bmAttributes	= USB_CONFIG_ATT_ONE | USB_CONFIG_ATT_SELFPOWER,
 	.MaxPower	= 96, /* 96ma */
 };
+#ifndef CONFIG_USB_TYPEC_MANAGER_NOTIFIER
+int microusb_get_usb210_count(void)
+{
+	int ret;
+	ret = _android_dev->usb210_count;
+	_android_dev->usb210_count = 0;
+	return ret;
+}
+EXPORT_SYMBOL(microusb_get_usb210_count);
+
+int microusb_get_usb310_count(void)
+{
+	int ret;
+	ret = _android_dev->usb310_count;
+	_android_dev->usb310_count = 0;
+	return ret;
+}
+EXPORT_SYMBOL(microusb_get_usb310_count);
+#endif
 
 static void android_work(struct work_struct *data)
 {
@@ -210,7 +240,18 @@ static void android_work(struct work_struct *data)
 			dev->sw_connected);
 	spin_lock_irqsave(&cdev->lock, flags);
 	if (cdev->config)
-		uevent_envp = configured;
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_CCR_PROTOCOL
+	{
+		if (dev->connected != dev->sw_connected) {
+			uevent_envp = connected;
+			schedule_work(&dev->work);
+		} else {
+#endif
+			uevent_envp = configured;
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_CCR_PROTOCOL
+		}
+	}
+#endif
 	else if (dev->connected != dev->sw_connected) {
 		uevent_envp = dev->connected ? connected : disconnected;
 #ifdef CONFIG_USB_TYPEC_MANAGER_NOTIFIER
@@ -231,7 +272,16 @@ static void android_work(struct work_struct *data)
 #ifdef CONFIG_USB_NOTIFY_PROC_LOG
 		store_usblog_notify(NOTIFY_USBSTATE, (void *)uevent_envp[0], NULL);
 #endif
-			printk(KERN_DEBUG "usb: %s sent uevent %s\n",
+#ifndef CONFIG_USB_TYPEC_MANAGER_NOTIFIER
+		if (dev->connected && cdev->config) {
+			if (dev->cdev && (dev->cdev->desc.bcdUSB == 0x310)) {
+				dev->usb310_count++;	// Super-Speed	
+			} else {
+				dev->usb210_count++;	// High-Speed
+			}
+		}
+#endif
+		printk(KERN_DEBUG "usb: %s sent uevent %s\n",
 			 __func__, uevent_envp[0]);
 	} else {
 		printk(KERN_DEBUG "usb: %s did not send uevent (%d %d %pK)\n",
@@ -422,7 +472,6 @@ static void functionfs_release_dev_callback(struct ffs_data *ffs_data)
 {
 }
 
-
 struct adb_data {
 	bool opened;
 	bool enabled;
@@ -451,6 +500,7 @@ adb_function_bind_config(struct android_usb_function *f,
 {
 	return adb_bind_config(c);
 }
+
 static void adb_android_function_enable(struct android_usb_function *f)
 {
 	struct android_dev *dev = _android_dev;
@@ -1263,7 +1313,6 @@ static struct android_usb_function mass_storage_function = {
 	.enable		= mass_storage_function_enable,
 };
 
-
 static int accessory_function_init(struct android_usb_function *f,
 					struct usb_composite_dev *cdev)
 {
@@ -1447,6 +1496,9 @@ static struct android_usb_function *supported_functions[] = {
 	&conn_gadget_function,
 #endif
 	&midi_function,
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_CCR_PROTOCOL
+	&ccr_function,
+#endif		
 	NULL
 };
 
@@ -1616,9 +1668,9 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	printk(KERN_DEBUG "usb: %s buff=%s\n", __func__, buff);
 	strlcpy(buf, buff, sizeof(buf));
 	b = strim(buf);
-	
+
 #ifdef CONFIG_USB_NOTIFY_PROC_LOG
-	store_usblog_notify(NOTIFY_USBMODE, (void *)b, NULL);
+		store_usblog_notify(NOTIFY_USBMODE, (void *)b, NULL);
 #endif
 	while (b) {
 		name = strsep(&b, ",");
@@ -1758,7 +1810,7 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 		dev->enabled = true;
 #ifdef CONFIG_USB_TYPEC_MANAGER_NOTIFIER
 		set_usb_enable_state();
-#endif
+#endif		
 	} else if (!enabled && dev->enabled) {
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 		/* avoid sending a disconnect switch event
@@ -1983,8 +2035,10 @@ static int android_bind(struct usb_composite_dev *cdev)
 	int			id, ret;
 
 	printk(KERN_DEBUG "usb: %s disconnect\n", __func__);
+
 	/* Save the default handler */
 	dev->setup_complete = cdev->req->complete;
+
 	/*
 	 * Start disconnected. Userspace will connect the gadget once
 	 * it is done configuring the functions.
@@ -2069,7 +2123,10 @@ android_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *c)
 	if (value < 0)
 		value = terminal_ctrl_request(cdev, c);
 #endif
-
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_CCR_PROTOCOL
+	if (value < 0)
+		value = ccr_ctrl_request(cdev, c);
+#endif
 	/* Special case the accessory function.
 	 * It needs to handle control requests before it is enabled.
 	 */

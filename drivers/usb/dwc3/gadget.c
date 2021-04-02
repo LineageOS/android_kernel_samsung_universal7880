@@ -970,6 +970,7 @@ static void dwc3_prepare_trbs(struct dwc3_ep *dep, bool starting)
 			struct scatterlist *s;
 			int		i;
 
+			printk(KERN_DEBUG"usb: %s using mapped segments \n",__func__);
 			for_each_sg(sg, s, request->num_mapped_sgs, i) {
 				unsigned chain = true;
 
@@ -1903,7 +1904,7 @@ static int dwc3_gadget_start(struct usb_gadget *g,
 			return -ENOMEM;
 	
 		cpumask_copy(default_cpu_mask, get_default_cpu_mask());
-		cpumask_or(affinity_cpu_mask, affinity_cpu_mask, cpumask_of(1));
+		cpumask_or(affinity_cpu_mask, affinity_cpu_mask, cpumask_of(dwc->irq_affinity_cpu_mask));
 		argos_irq_affinity_setup_label(irq, "USB", affinity_cpu_mask, default_cpu_mask);
 #endif
 	return 0;
@@ -2661,6 +2662,8 @@ static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
 		break;
 	}
 
+	dwc->eps[1]->endpoint.maxpacket = dwc->gadget.ep0->maxpacket;
+
 	/* Enable USB2 LPM Capability */
 
 	if ((dwc->revision > DWC3_REVISION_194A)
@@ -3276,7 +3279,7 @@ void dwc3_gadget_disconnect_proc(struct dwc3 *dwc)
 
 	if (dwc->gadget_driver && dwc->gadget_driver->disconnect)
 		dwc->gadget_driver->disconnect(&dwc->gadget);
-	
+
 	dwc->start_config_issued = false;
 
 	dwc->gadget.speed = USB_SPEED_UNKNOWN;
