@@ -428,12 +428,6 @@ config USB_CONFIGFS_UEVENT
 	  state changes. The gadget can be in any of the following
 	  three states: "CONNECTED/DISCONNECTED/CONFIGURED"
 
-config USB_RNDIS_MULTIPACKET
-	boolean "Samsung Rndis Multi Packet support"
-	depends on USB_CONFIGFS_UEVENT
-	help
-		Rndis Multipacket Support.
-
 config USB_CONFIGFS_F_MIDI
         boolean "MIDI function"
         depends on USB_CONFIGFS
@@ -476,6 +470,13 @@ config USB_ANDROID_SAMSUNG_MTP
 	  If you enable this option,
 	  google mtp will be changed to samsung mtp.
 
+config USB_F_CONN_GADGET_NDOP
+    bool "Conn gadget that do not support DexLive"
+	depends on USB_G_ANDROID
+	depends on ANDROID_MAJOR_VERSION >= "q"
+	help
+	  Next SideSync
+
 config USB_LOCK_SUPPORT_FOR_MDM
 	boolean "Samsung USB_LOCK function for MDM"
 	depends on USB_G_ANDROID
@@ -509,6 +510,12 @@ config USB_RNDIS_MULTIPACKET
 	depends on USB_G_ANDROID
 	help
 		Rndis Multipacket Support.
+		
+config USB_ANDROID_SAMSUNG_CCR_PROTOCOL
+	boolean "Samsung USB CCR Protocol support"
+	depends on USB_G_ANDROID
+	help
+		CCR Protocol Support.
 
 config USB_ANDROID_RNDIS_DWORD_ALIGNED
 	boolean "Use double word aligned"

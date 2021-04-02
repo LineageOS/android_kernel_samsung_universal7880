@@ -638,7 +638,7 @@ struct xhci_ring *xhci_stream_id_to_ring(
 	if (!ep->stream_info)
 		return NULL;
 
-	if (stream_id > ep->stream_info->num_streams)
+	if (stream_id >= ep->stream_info->num_streams)
 		return NULL;
 	return ep->stream_info->stream_rings[stream_id];
 }
@@ -962,6 +962,8 @@ void xhci_free_virt_device(struct xhci_hcd *xhci, int slot_id)
 	if (dev->out_ctx)
 		xhci_free_container_ctx(xhci, dev->out_ctx);
 
+	if (dev->udev && dev->udev->slot_id)
+		dev->udev->slot_id = 0;
 	kfree(xhci->devs[slot_id]);
 	xhci->devs[slot_id] = NULL;
 }
@@ -1032,7 +1034,8 @@ int xhci_alloc_virt_device(struct xhci_hcd *xhci, int slot_id,
 
 	return 1;
 fail:
-
+	if (dev->eps[0].ring)
+		xhci_ring_free(xhci, dev->eps[0].ring);
 	if (dev->in_ctx)
 		xhci_free_container_ctx(xhci, dev->in_ctx);
 	if (dev->out_ctx)
@@ -2374,7 +2377,6 @@ int xhci_mem_init(struct xhci_hcd *xhci, gfp_t flags)
 #if defined(CONFIG_USB_HOST_SAMSUNG_FEATURE)
 	INIT_DELAYED_WORK(&xhci->cmd_timer, xhci_handle_command_timeout);
 	init_completion(&xhci->cmd_ring_stop_completion);
-
 #else
 	/* init command timeout timer */
 	setup_timer(&xhci->cmd_timer, xhci_handle_command_timeout,
@@ -2563,8 +2565,6 @@ int xhci_mem_init(struct xhci_hcd *xhci, gfp_t flags)
 	xhci_dbg_trace(xhci, trace_xhci_dbg_init,
 			"Wrote ERST address to ir_set 0.");
 	xhci_print_ir_set(xhci, 0);
-
-
 #if !defined(CONFIG_USB_HOST_SAMSUNG_FEATURE)
 	/* init command timeout timer */
 	init_timer(&xhci->cmd_timer);

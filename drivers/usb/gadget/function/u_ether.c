@@ -223,7 +223,7 @@ rx_submit(struct eth_dev *dev, struct usb_request *req, gfp_t gfp_flags)
 {
 	struct sk_buff	*skb;
 	int		retval = -ENOMEM;
-	unsigned int	size = 0;
+	size_t		size = 0;
 	struct usb_ep	*out;
 	unsigned long	flags;
 
@@ -263,7 +263,7 @@ rx_submit(struct eth_dev *dev, struct usb_request *req, gfp_t gfp_flags)
 	if (dev->port_usb->is_fixed)
 		size = max_t(size_t, size, dev->port_usb->fixed_out_len);
 
-	pr_debug("%s: size: %d", __func__, size);
+	pr_debug("%s: size: %lu", __func__, size);
 	skb = alloc_skb(size + NET_IP_ALIGN, gfp_flags);
 	if (skb == NULL) {
 		DBG(dev, "no rx skb\n");
@@ -722,7 +722,7 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 				retval = usb_ep_queue(in, new_req, GFP_ATOMIC);
 				switch (retval) {
 				default:
-					printk(KERN_ERR"usb: dropped tx_complete_newreq(%pK)\n",new_req);
+					printk(KERN_ERR"usb: dropped tx_complete_newreq(%p)\n",new_req);
 					DBG(dev, "tx queue err %d\n", retval);
 					new_req->length = 0;
 #ifdef CONFIG_USB_NCM_ACCUMULATE_MULTPKT
@@ -1034,19 +1034,6 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 
 	req->length = length;
 
-	/* throttle highspeed IRQ rate back slightly */
-	if (gadget_is_dualspeed(dev->gadget) &&
-			 (dev->gadget->speed == USB_SPEED_HIGH)) {
-		dev->tx_qlen++;
-		if (dev->tx_qlen == (qmult/2)) {
-			req->no_interrupt = 0;
-			dev->tx_qlen = 0;
-		} else {
-			req->no_interrupt = 1;
-		}
-	} else {
-		req->no_interrupt = 0;
-	}
 	retval = usb_ep_queue(in, req, GFP_ATOMIC);
 	switch (retval) {
 	default:
@@ -1293,8 +1280,8 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
 		free_netdev(net);
 		dev = ERR_PTR(status);
 	} else {
-		DBG(dev, "MAC %pM\n", net->dev_addr);
-		DBG(dev, "HOST MAC %pM\n", dev->host_mac);
+		INFO(dev, "MAC %pM\n", net->dev_addr);
+		INFO(dev, "HOST MAC %pM\n", dev->host_mac);
 
 		/* two kinds of host-initiated state changes:
 		 *  - iff DATA transfer is active, carrier is "on"

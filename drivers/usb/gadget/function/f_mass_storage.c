@@ -858,7 +858,7 @@ static int do_read_cd(struct fsg_common *common)
 	loff_t			file_offset, file_offset_tmp;
 	unsigned int		amount;
 	unsigned int		partial_page;
-	unsigned int		nread;
+	ssize_t			nread;
 
 	u32 nb_sectors, transfer_request;
 

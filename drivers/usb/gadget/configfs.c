@@ -1549,7 +1549,7 @@ static void android_work(struct work_struct *data)
 	}
 
 	if (!uevent_sent) {
-		pr_info("%s: did not send uevent (%d %d %pK)\n", __func__,
+		pr_info("%s: did not send uevent (%d %d %p)\n", __func__,
 			gi->connected, gi->sw_connected, cdev->config);
 	}
 }
@@ -1765,7 +1765,7 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 				__func__, enabled, dev->enabled);
 		cdev->next_string_id = 0;
 		if(!gadget) {
-			pr_info("%s: Gadget is NULL\n", __func__);
+			pr_info("%s: Gadget is NULL: %p\n", __func__, gadget);
 			mutex_unlock(&dev->lock);
 			return -ENODEV;
 		}
@@ -1830,7 +1830,6 @@ static struct device_attribute *android_usb_attributes[] = {
 	&dev_attr_functions,
 	NULL
 };
-
 #endif
 
 static struct config_group *gadgets_make(
@@ -1893,6 +1892,7 @@ static struct config_group *gadgets_make(
 		goto err;
 
 	dev_set_drvdata(android_device, gi);
+
 	attrs = android_usb_attributes;
 	while ((attr = *attrs++)) {
 		err = device_create_file(android_device, attr);
@@ -1913,6 +1913,7 @@ static struct config_group *gadgets_make(
 	config_group_init_type_name(&gi->group, name,
 				&gadget_root_type);
 	return &gi->group;
+
 err1:
 #ifdef CONFIG_USB_CONFIGFS_UEVENT
 	attrs = android_usb_attributes;
@@ -1938,7 +1939,7 @@ static void gadgets_drop(struct config_group *group, struct config_item *item)
 
 #ifdef CONFIG_USB_CONFIGFS_UEVENT
 	attrs = android_usb_attributes;
-	while((attr = *attrs++))
+	while ((attr = *attrs++))
 		device_remove_file(android_device, attr);
 	device_destroy(android_device->class, android_device->devt);
 #endif
