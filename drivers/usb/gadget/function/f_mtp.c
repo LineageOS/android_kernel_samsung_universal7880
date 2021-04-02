@@ -744,6 +744,7 @@ static void send_file_work(struct work_struct *data)
 	filp = dev->xfer_file;
 	offset = dev->xfer_file_offset;
 	count = dev->xfer_file_length;
+
 	if (count < 0) {
 		dev->xfer_result = -EINVAL;
 		return;
@@ -849,6 +850,7 @@ static void receive_file_work(struct work_struct *data)
 	filp = dev->xfer_file;
 	offset = dev->xfer_file_offset;
 	count = dev->xfer_file_length;
+
 	if (count < 0) {
 		dev->xfer_result = -EINVAL;
 		return;
@@ -1259,10 +1261,11 @@ mtp_function_bind(struct usb_configuration *c, struct usb_function *f)
 			mtp_fullspeed_out_desc.bEndpointAddress;
 	}
 
+
 	DBG(cdev, "%s speed %s: IN/%s, OUT/%s\n",
-		gadget_is_superspeed(c->cdev->gadget) ? "super" :
-		(gadget_is_dualspeed(c->cdev->gadget) ? "dual" : "full"),
-		f->name, dev->ep_in->name, dev->ep_out->name);
+			gadget_is_superspeed(c->cdev->gadget) ? "super" :
+			gadget_is_dualspeed(c->cdev->gadget) ? "dual" : "full",
+			f->name, dev->ep_in->name, dev->ep_out->name);
 	return 0;
 }
 
@@ -1347,8 +1350,7 @@ static void mtp_function_disable(struct usb_function *f)
 }
 
 #ifndef CONFIG_USB_CONFIGFS_UEVENT
-static int mtp_bind_config(struct usb_configuration *c,
-					  bool ptp_config)
+static int mtp_bind_config(struct usb_configuration *c, bool ptp_config)
 {
 	struct mtp_dev *dev = _mtp_dev;
 	int ret = 0;
@@ -1589,8 +1591,8 @@ struct usb_function *function_alloc_mtp_ptp(struct usb_function_instance *fi,
 		function->fs_descriptors = fs_ptp_descs;
 		function->hs_descriptors = hs_ptp_descs;
 		function->ss_descriptors = ss_ptp_descs;
-	}	
-	
+	}
+
 	function->strings = mtp_strings;
 	function->bind = mtp_function_bind;
 	function->unbind = mtp_function_unbind;
