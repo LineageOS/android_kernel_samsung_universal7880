@@ -442,6 +442,7 @@ extern bool mptcp_init_failed;
 #define MPTCPHDR_JOIN		0x80
 /* MPTCP flags: TX only */
 #define MPTCPHDR_INF		0x08
+#define MPTCP_REINJECT		0x10 /* Did we reinject this segment? */
 
 struct mptcp_option {
 	__u8	kind;
@@ -674,9 +675,6 @@ extern struct workqueue_struct *mptcp_wq;
 
 #define MPTCP_INC_STATS(net, field)	SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
 #define MPTCP_INC_STATS_BH(net, field)	SNMP_INC_STATS_BH((net)->mptcp.mptcp_statistics, field)
-#define MPTCP_DEC_STATS(net, field)	SNMP_DEC_STATS((net)->mptcp.mptcp_statistics, field)
-#define MPTCP_ADD_STATS_USER(net, field, val) SNMP_ADD_STATS_USER((net)->mptcp.mptcp_statistics, field, val)
-#define MPTCP_ADD_STATS(net, field, val)	SNMP_ADD_STATS((net)->mptcp.mptcp_statistics, field, val)
 
 enum
 {
@@ -871,6 +869,7 @@ void mptcp_disable_static_key(void);
 void mptcp_cookies_reqsk_init(struct request_sock *req,
 			      struct mptcp_options_received *mopt,
 			      struct sk_buff *skb);
+void mptcp_sock_destruct(struct sock *sk);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
@@ -961,7 +960,8 @@ static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 
 static inline void mptcp_send_reset(struct sock *sk)
 {
-	tcp_sk(sk)->ops->send_active_reset(sk, GFP_ATOMIC);
+	if (tcp_need_reset(sk->sk_state))
+		tcp_sk(sk)->ops->send_active_reset(sk, GFP_ATOMIC);
 	mptcp_sub_force_close(sk);
 }
 
@@ -972,7 +972,7 @@ static inline void mptcp_sub_force_close_all(struct mptcp_cb *mpcb,
 
 	mptcp_for_each_sk_safe(mpcb, sk_it, tmp) {
 		if (sk_it != except)
-			mptcp_sub_force_close(sk_it);
+			mptcp_send_reset(sk_it);
 	}
 }
 
@@ -1275,7 +1275,7 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 	       &inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr,
 	       __builtin_return_address(0));
 	if (!is_master_tp(tp)) {
-		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKSUB);
+		MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_FBACKSUB);
 		return true;
 	}
 
@@ -1286,7 +1286,7 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 
 	mptcp_sub_force_close_all(mpcb, sk);
 
-	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKINIT);
+	MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_FBACKINIT);
 
 	return false;
 }
