@@ -577,7 +577,7 @@ static int update_timestamp_of_queue(struct snd_seq_event *event,
 	event->queue = queue;
 	event->flags &= ~SNDRV_SEQ_TIME_STAMP_MASK;
 	if (real_time) {
-		event->time.time = snd_seq_timer_get_cur_time(q->timer);
+		event->time.time = snd_seq_timer_get_cur_time(q->timer, true);
 		event->flags |= SNDRV_SEQ_TIME_STAMP_REAL;
 	} else {
 		event->time.tick = snd_seq_timer_get_cur_tick(q->timer);
@@ -1014,7 +1014,7 @@ static ssize_t snd_seq_write(struct file *file, const char __user *buf,
 {
 	struct snd_seq_client *client = file->private_data;
 	int written = 0, len;
-	int err;
+	int err, handled;
 	struct snd_seq_event event;
 
 	if (!(snd_seq_file_flags(file) & SNDRV_SEQ_LFLG_OUTPUT))
@@ -1027,6 +1027,8 @@ static ssize_t snd_seq_write(struct file *file, const char __user *buf,
 	if (!client->accept_output || client->pool == NULL)
 		return -ENXIO;
 
+ repeat:
+	handled = 0;
 	/* allocate the pool now if the pool is not allocated yet */ 
 	mutex_lock(&client->ioctl_mutex);
 	if (client->pool->size > 0 && !snd_seq_write_pool_allocated(client)) {
@@ -1086,12 +1088,19 @@ static ssize_t snd_seq_write(struct file *file, const char __user *buf,
 						   0, 0, &client->ioctl_mutex);
 		if (err < 0)
 			break;
+		handled++;
 
 	__skip_event:
 		/* Update pointers and counts */
 		count -= len;
 		buf += len;
 		written += len;
+
+		/* let's have a coffee break if too many events are queued */
+		if (++handled >= 200) {
+			mutex_unlock(&client->ioctl_mutex);
+			goto repeat;
+		}
 	}
 
  out:
@@ -1543,19 +1552,14 @@ static int snd_seq_ioctl_create_queue(struct snd_seq_client *client,
 				      void __user *arg)
 {
 	struct snd_seq_queue_info info;
-	int result;
 	struct snd_seq_queue *q;
 
 	if (copy_from_user(&info, arg, sizeof(info)))
 		return -EFAULT;
 
-	result = snd_seq_queue_alloc(client->number, info.locked, info.flags);
-	if (result < 0)
-		return result;
-
-	q = queueptr(result);
-	if (q == NULL)
-		return -EINVAL;
+	q = snd_seq_queue_alloc(client->number, info.locked, info.flags);
+	if (IS_ERR(q))
+		return PTR_ERR(q);
 
 	info.queue = q->queue;
 	info.locked = q->locked;
@@ -1565,7 +1569,7 @@ static int snd_seq_ioctl_create_queue(struct snd_seq_client *client,
 	if (! info.name[0])
 		snprintf(info.name, sizeof(info.name), "Queue-%d", q->queue);
 	strscpy(q->name, info.name, sizeof(q->name));
-	queuefree(q);
+	snd_use_lock_free(&q->use_lock);
 
 	if (copy_to_user(arg, &info, sizeof(info)))
 		return -EFAULT;
@@ -1691,7 +1695,7 @@ static int snd_seq_ioctl_get_queue_status(struct snd_seq_client *client,
 	tmr = queue->timer;
 	status.events = queue->tickq->cells + queue->timeq->cells;
 
-	status.time = snd_seq_timer_get_cur_time(tmr);
+	status.time = snd_seq_timer_get_cur_time(tmr, true);
 	status.tick = snd_seq_timer_get_cur_tick(tmr);
 
 	status.running = tmr->running;
@@ -1902,8 +1906,7 @@ static int snd_seq_ioctl_get_client_pool(struct snd_seq_client *client,
 	if (cptr->type == USER_CLIENT) {
 		info.input_pool = cptr->data.user.fifo_pool_size;
 		info.input_free = info.input_pool;
-		if (cptr->data.user.fifo)
-			info.input_free = snd_seq_unused_cells(cptr->data.user.fifo->pool);
+		info.input_free = snd_seq_fifo_unused_cells(cptr->data.user.fifo);
 	} else {
 		info.input_pool = 0;
 		info.input_free = 0;

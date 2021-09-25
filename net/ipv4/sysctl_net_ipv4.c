@@ -35,6 +35,8 @@ static int ip_local_port_range_min[] = { 1, 1 };
 static int ip_local_port_range_max[] = { 65535, 65535 };
 static int tcp_adv_win_scale_min = -31;
 static int tcp_adv_win_scale_max = 31;
+static int tcp_min_snd_mss_min = TCP_MIN_SND_MSS;
+static int tcp_min_snd_mss_max = 65535;
 static int ip_ttl_min = 1;
 static int ip_ttl_max = 255;
 static int tcp_syn_retries_min = 1;
@@ -94,11 +96,11 @@ static void inet_get_ping_group_range_table(struct ctl_table *table, kgid_t *low
 		container_of(table->data, struct net, ipv4.ping_group_range.range);
 	unsigned int seq;
 	do {
-		seq = read_seqbegin(&net->ipv4.ip_local_ports.lock);
+		seq = read_seqbegin(&net->ipv4.ping_group_range.lock);
 
 		*low = data[0];
 		*high = data[1];
-	} while (read_seqretry(&net->ipv4.ip_local_ports.lock, seq));
+	} while (read_seqretry(&net->ipv4.ping_group_range.lock, seq));
 }
 
 /* Update system visible IP port range */
@@ -107,10 +109,10 @@ static void set_ping_group_range(struct ctl_table *table, kgid_t low, kgid_t hig
 	kgid_t *data = table->data;
 	struct net *net =
 		container_of(table->data, struct net, ipv4.ping_group_range.range);
-	write_seqlock_bh(&net->ipv4.ip_local_ports.lock);
+	write_seqlock(&net->ipv4.ping_group_range.lock);
 	data[0] = low;
 	data[1] = high;
-	write_sequnlock_bh(&net->ipv4.ip_local_ports.lock);
+	write_sequnlock(&net->ipv4.ping_group_range.lock);
 }
 
 /* Validate changes from /proc interface. */
@@ -915,6 +917,15 @@ static struct ctl_table ipv4_net_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "tcp_min_snd_mss",
+		.data		= &init_net.ipv4.sysctl_tcp_min_snd_mss,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &tcp_min_snd_mss_min,
+		.extra2		= &tcp_min_snd_mss_max,
 	},
 	{
 		.procname	= "tcp_fwmark_accept",
