@@ -290,6 +290,7 @@ void            __adf_nbuf_dmamap_set_cb(__adf_os_dma_map_t dmap, void *cb, void
 void            __adf_nbuf_reg_trace_cb(adf_nbuf_trace_update_t cb_func_ptr);
 a_status_t      __adf_nbuf_is_dhcp_pkt(struct sk_buff *skb);
 a_status_t      __adf_nbuf_is_eapol_pkt(struct sk_buff *skb);
+a_bool_t        __adf_nbuf_data_is_eapol_pkt(uint8_t *data);
 
 #ifdef QCA_PKT_PROTO_TRACE
 void

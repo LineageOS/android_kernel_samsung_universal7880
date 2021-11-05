@@ -2474,6 +2474,7 @@ static void hdd_ipa_send_skb_to_network(adf_nbuf_t skb, hdd_adapter_t *adapter)
 
 	struct hdd_ipa_priv *hdd_ipa = ghdd_ipa;
 	unsigned int cpu_index;
+	hdd_context_t *pHddCtx = NULL;
 
 	if (!adapter || adapter->magic != WLAN_HDD_ADAPTER_MAGIC) {
 		HDD_IPA_LOG(VOS_TRACE_LEVEL_INFO_LOW, "Invalid adapter: 0x%p",
@@ -2487,6 +2488,36 @@ static void hdd_ipa_send_skb_to_network(adf_nbuf_t skb, hdd_adapter_t *adapter)
 		HDD_IPA_INCREASE_INTERNAL_DROP_COUNT(hdd_ipa);
 		adf_nbuf_free(skb);
 		return;
+	}
+
+	pHddCtx = (hdd_context_t *)adapter->pHddCtx;
+	if (pHddCtx->cfg_ini->gEnableSapEapolChecking &&
+		(adapter->device_mode == WLAN_HDD_SOFTAP ||
+		adapter->device_mode == WLAN_HDD_P2P_GO) &&
+		adf_nbuf_is_eapol_pkt(skb)) {
+
+		/* CR 2868053 */
+		HDD_IPA_LOG(VOS_TRACE_LEVEL_INFO,
+				"QSV2020005, dev, mode=%d, session=%u, %s, addr (%pM)",
+				adapter->device_mode,
+				adapter->sessionId,
+				adapter->dev->name,
+				adapter->dev->dev_addr);
+		HDD_IPA_LOG(VOS_TRACE_LEVEL_INFO,
+				"QSV2020005 pkt addr (%pM)",
+				skb->data);
+		if (adf_os_mem_cmp(adapter->dev->dev_addr,
+			skb->data, VOS_MAC_ADDR_SIZE)) {
+			/* CR 2868053, discard this EAPOL */
+			HDD_IPA_LOG(VOS_TRACE_LEVEL_ERROR,
+					"QSV2020005 discard invalid EAPOL frame, dev=%pM, "
+					"pkt_da=%pM",
+					adapter->dev->dev_addr,
+					skb->data);
+
+			adf_nbuf_free(skb);
+			return;
+		}
 	}
 
 	skb->destructor = hdd_ipa_uc_rt_debug_destructor;

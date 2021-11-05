@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2015 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017, 2021 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -2546,7 +2546,13 @@ void limProcessBtAmpApMlmAddStaRsp( tpAniSirGlobal pMac, tpSirMsgQ limMsgQ,tpPES
      * 2) PE receives eWNI_SME_ASSOC_CNF from SME
      * 3) BTAMP-AP sends Re/Association Response to BTAMP-STA
      */
-    limSendMlmAssocInd(pMac, pStaDs, psessionEntry);
+    if (eSIR_SUCCESS != limSendMlmAssocInd(pMac, pStaDs, psessionEntry))
+        limRejectAssociation(pMac, pStaDs->staAddr,
+                 pStaDs->mlmStaContext.subType,
+                 true, pStaDs->mlmStaContext.authType,
+                 pStaDs->assocId, true,
+                 (tSirResultCodes) eSIR_MAC_UNSPEC_FAILURE_STATUS,
+                 psessionEntry);
     // fall though to reclaim the original Add STA Response message
 end:
     if( 0 != limMsgQ->bodyptr )

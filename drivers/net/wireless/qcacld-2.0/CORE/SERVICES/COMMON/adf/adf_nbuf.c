@@ -494,6 +494,22 @@ __adf_nbuf_is_eapol_pkt(struct sk_buff *skb)
     }
 }
 
+a_bool_t
+__adf_nbuf_data_is_eapol_pkt(uint8_t *data)
+{
+    a_uint16_t    ether_type;
+
+    ether_type = (a_uint16_t)(*(a_uint16_t *)(data + ADF_NBUF_TRAC_ETH_TYPE_OFFSET));
+    if (ADF_NBUF_TRAC_EAPOL_ETH_TYPE == adf_os_cpu_to_be16(ether_type))
+    {
+        return A_TRUE;
+    }
+    else
+    {
+        return A_FALSE;
+    }
+}
+
 #ifdef QCA_PKT_PROTO_TRACE
 void
 __adf_nbuf_trace_update(struct sk_buff *buf, char *event_string)
@@ -565,3 +581,4 @@ EXPORT_SYMBOL(__adf_nbuf_get_exemption_type);
 EXPORT_SYMBOL(__adf_nbuf_dmamap_set_cb);
 EXPORT_SYMBOL(__adf_nbuf_is_dhcp_pkt);
 EXPORT_SYMBOL(__adf_nbuf_is_eapol_pkt);
+EXPORT_SYMBOL(__adf_nbuf_data_is_eapol_pkt);

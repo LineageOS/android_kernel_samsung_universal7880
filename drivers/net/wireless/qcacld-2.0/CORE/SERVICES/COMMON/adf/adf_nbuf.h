@@ -1191,4 +1191,17 @@ adf_nbuf_is_eapol_pkt(adf_nbuf_t buf)
 {
     return (__adf_nbuf_is_eapol_pkt(buf));
 }
+
+/**
+ * @brief this will return if the skb data is a eapol packet or not
+ *
+ * @param[in] data       data
+ *
+ * @return A_TRUE if packet is EAPOL packet
+ */
+static inline a_bool_t
+adf_nbuf_data_is_eapol_pkt(uint8_t *data)
+{
+    return (__adf_nbuf_data_is_eapol_pkt(data));
+}
 #endif

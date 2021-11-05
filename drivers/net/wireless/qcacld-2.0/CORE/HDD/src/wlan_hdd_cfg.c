@@ -3258,6 +3258,13 @@ REG_TABLE_ENTRY g_registry_table[] =
                  CFG_ENABLE_DEBUG_CONNECT_ISSUE_MIN ,
                  CFG_ENABLE_DEBUG_CONNECT_ISSUE_MAX),
 
+   REG_VARIABLE( CFG_ENABLE_SAP_EAPOL_CHECKING, WLAN_PARAM_Integer,
+                 hdd_config_t, gEnableSapEapolChecking,
+                 VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+                 CFG_ENABLE_SAP_EAPOL_CHECKING_DEFAULT,
+                 CFG_ENABLE_SAP_EAPOL_CHECKING_MIN ,
+                 CFG_ENABLE_SAP_EAPOL_CHECKING_MAX),
+
    REG_VARIABLE( CFG_RX_HANDLE, WLAN_PARAM_Integer,
                  hdd_config_t, rxhandle,
                  VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
