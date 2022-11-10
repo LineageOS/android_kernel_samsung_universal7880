@@ -718,7 +718,6 @@ static int ptrace_peek_siginfo(struct task_struct *child,
 		spin_lock_irq(&child->sighand->siglock);
 		list_for_each_entry(q, &pending->list, list) {
 			if (!off--) {
-				found = true;
 				copy_siginfo(&info, &q->info);
 				break;
 			}

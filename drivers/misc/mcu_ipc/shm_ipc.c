@@ -65,51 +65,49 @@ unsigned shm_get_ipc_rgn_size(void)
 	return pdata.ipc_size;
 }
 
-int shm_get_security_param3(unsigned long mode, u32 main_size, unsigned long *param)
+unsigned long shm_get_security_param3(unsigned long mode, u32 main_size)
 {
-	int ret = 0;
+	unsigned long ret;
 
 	switch (mode) {
 	case 0: /* CP_BOOT_MODE_NORMAL */
-		*param = main_size;
+		ret = main_size;
 		break;
 	case 1: /* CP_BOOT_MODE_DUMP */
 #ifdef CP_NONSECURE_BOOT
-		*param = pdata.p_addr;
+		ret = pdata.p_addr;
 #else
-		*param = pdata.p_addr + pdata.ipc_off;
+		ret = pdata.p_addr + pdata.ipc_off;
 #endif
 		break;
 	case 2: /* CP_BOOT_RE_INIT */
-		*param = 0;
+		ret = 0;
 		break;
 	default:
 		pr_info("%s: Invalid sec_mode(%lu)\n", __func__, mode);
-		ret = -EINVAL;
+		ret = 0;
 		break;
 	}
-
 	return ret;
 }
 
-int shm_get_security_param2(unsigned long mode, u32 bl_size, unsigned long *param)
+unsigned long shm_get_security_param2(unsigned long mode, u32 bl_size)
 {
-	int ret = 0;
+	unsigned long ret;
 
 	switch (mode) {
 	case 0: /* CP_BOOT_MODE_NORMAL */
 	case 1: /* CP_BOOT_MODE_DUMP */
-		*param = bl_size;
+		ret = bl_size;
 		break;
 	case 2: /* CP_BOOT_RE_INIT */
-		*param = 0;
+		ret = 0;
 		break;
 	default:
 		pr_info("%s: Invalid sec_mode(%lu)\n", __func__, mode);
-		ret = -EINVAL;
+		ret = 0;
 		break;
 	}
-
 	return ret;
 }
 
