@@ -306,7 +306,7 @@ static __inline__ int get_opt_int(const char *this_opt, const char *name,
 }
 
 static __inline__ int get_opt_bool(const char *this_opt, const char *name,
-				   bool *ret)
+				   int *ret)
 {
 	if (!ret)
 		return 0;

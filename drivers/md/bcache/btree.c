@@ -686,8 +686,6 @@ static unsigned long bch_mca_scan(struct shrinker *shrink,
 	 * IO can always make forward progress:
 	 */
 	nr /= c->btree_pages;
-	if (nr == 0)
-		nr = 1;
 	nr = min_t(unsigned long, nr, mca_can_free(c));
 
 	i = 0;
@@ -795,7 +793,7 @@ int bch_btree_cache_alloc(struct cache_set *c)
 	mutex_init(&c->verify_lock);
 
 	c->verify_ondisk = (void *)
-		__get_free_pages(GFP_KERNEL|__GFP_COMP, ilog2(bucket_pages(c)));
+		__get_free_pages(GFP_KERNEL, ilog2(bucket_pages(c)));
 
 	c->verify_data = mca_bucket_alloc(c, &ZERO_KEY, GFP_KERNEL);
 
@@ -841,17 +839,15 @@ out:
 
 static int mca_cannibalize_lock(struct cache_set *c, struct btree_op *op)
 {
-	spin_lock(&c->btree_cannibalize_lock);
-	if (likely(c->btree_cache_alloc_lock == NULL)) {
-		c->btree_cache_alloc_lock = current;
-	} else if (c->btree_cache_alloc_lock != current) {
+	struct task_struct *old;
+
+	old = cmpxchg(&c->btree_cache_alloc_lock, NULL, current);
+	if (old && old != current) {
 		if (op)
 			prepare_to_wait(&c->btree_cache_wait, &op->wait,
 					TASK_UNINTERRUPTIBLE);
-		spin_unlock(&c->btree_cannibalize_lock);
 		return -EINTR;
 	}
-	spin_unlock(&c->btree_cannibalize_lock);
 
 	return 0;
 }
@@ -886,12 +882,10 @@ static struct btree *mca_cannibalize(struct cache_set *c, struct btree_op *op,
  */
 static void bch_cannibalize_unlock(struct cache_set *c)
 {
-	spin_lock(&c->btree_cannibalize_lock);
 	if (c->btree_cache_alloc_lock == current) {
 		c->btree_cache_alloc_lock = NULL;
 		wake_up(&c->btree_cache_wait);
 	}
-	spin_unlock(&c->btree_cannibalize_lock);
 }
 
 static struct btree *mca_alloc(struct cache_set *c, struct btree_op *op,
@@ -1379,7 +1373,7 @@ static int btree_gc_coalesce(struct btree *b, struct btree_op *op,
 			if (__set_blocks(n1, n1->keys + n2->keys,
 					 block_bytes(b->c)) >
 			    btree_blocks(new_nodes[i]))
-				goto out_unlock_nocoalesce;
+				goto out_nocoalesce;
 
 			keys = n2->keys;
 			/* Take the key of the node we're getting rid of */
@@ -1408,7 +1402,7 @@ static int btree_gc_coalesce(struct btree *b, struct btree_op *op,
 
 		if (__bch_keylist_realloc(&keylist,
 					  bkey_u64s(&new_nodes[i]->key)))
-			goto out_unlock_nocoalesce;
+			goto out_nocoalesce;
 
 		bch_btree_node_write(new_nodes[i], &cl);
 		bch_keylist_add(&keylist, &new_nodes[i]->key);
@@ -1453,10 +1447,6 @@ static int btree_gc_coalesce(struct btree *b, struct btree_op *op,
 
 	/* Invalidated our iterator */
 	return -EINTR;
-
-out_unlock_nocoalesce:
-	for (i = 0; i < nodes; i++)
-		mutex_unlock(&new_nodes[i]->write_lock);
 
 out_nocoalesce:
 	closure_sync(&cl);
@@ -1775,34 +1765,33 @@ static void bch_btree_gc(struct cache_set *c)
 	bch_moving_gc(c);
 }
 
-static bool gc_should_run(struct cache_set *c)
-{
-	struct cache *ca;
-	unsigned i;
-
-	for_each_cache(ca, c, i)
-		if (ca->invalidate_needs_gc)
-			return true;
-
-	if (atomic_read(&c->sectors_to_gc) < 0)
-		return true;
-
-	return false;
-}
-
 static int bch_gc_thread(void *arg)
 {
 	struct cache_set *c = arg;
+	struct cache *ca;
+	unsigned i;
 
 	while (1) {
-		wait_event_interruptible(c->gc_wait,
-			   kthread_should_stop() || gc_should_run(c));
+again:
+		bch_btree_gc(c);
 
+		set_current_state(TASK_INTERRUPTIBLE);
 		if (kthread_should_stop())
 			break;
 
-		set_gc_sectors(c);
-		bch_btree_gc(c);
+		mutex_lock(&c->bucket_lock);
+
+		for_each_cache(ca, c, i)
+			if (ca->invalidate_needs_gc) {
+				mutex_unlock(&c->bucket_lock);
+				set_current_state(TASK_RUNNING);
+				goto again;
+			}
+
+		mutex_unlock(&c->bucket_lock);
+
+		try_to_freeze();
+		schedule();
 	}
 
 	return 0;
@@ -1810,10 +1799,11 @@ static int bch_gc_thread(void *arg)
 
 int bch_gc_thread_start(struct cache_set *c)
 {
-	c->gc_thread = kthread_run(bch_gc_thread, c, "bcache_gc");
+	c->gc_thread = kthread_create(bch_gc_thread, c, "bcache_gc");
 	if (IS_ERR(c->gc_thread))
 		return PTR_ERR(c->gc_thread);
 
+	set_task_state(c->gc_thread, TASK_INTERRUPTIBLE);
 	return 0;
 }
 

@@ -1282,9 +1282,7 @@ static int net2280_dequeue(struct usb_ep *_ep, struct usb_request *_req)
 			break;
 	}
 	if (&req->req != _req) {
-		ep->stopped = stopped;
 		spin_unlock_irqrestore(&ep->dev->lock, flags);
-		ep_dbg(ep->dev, "%s: Request mismatch\n", __func__);
 		return -EINVAL;
 	}
 
@@ -2428,8 +2426,11 @@ static void stop_activity(struct net2280 *dev, struct usb_gadget_driver *driver)
 		nuke(&dev->ep[i]);
 
 	/* report disconnect; the driver is already quiesced */
-	if (driver)
+	if (driver) {
+		spin_unlock(&dev->lock);
 		driver->disconnect(&dev->gadget);
+		spin_lock(&dev->lock);
+	}
 
 	usb_reinit(dev);
 }
@@ -3738,10 +3739,8 @@ static int net2280_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	return 0;
 
 done:
-	if (dev) {
+	if (dev)
 		net2280_remove(pdev);
-		kfree(dev);
-	}
 	return retval;
 }
 

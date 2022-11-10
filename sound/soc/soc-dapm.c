@@ -530,13 +530,7 @@ static void dapm_set_mixer_path_status(struct snd_soc_dapm_widget *w,
 			val = max - val;
 		p->connect = !!val;
 	} else {
-		/* since a virtual mixer has no backing registers to
-		 * decide which path to connect, it will try to match
-		 * with initial state.  This is to ensure
-		 * that the default mixer choice will be
-		 * correctly powered up during initialization.
-		 */
-		p->connect = invert;
+		p->connect = 0;
 	}
 }
 
@@ -621,7 +615,6 @@ static int dapm_create_or_share_mixmux_kcontrol(struct snd_soc_dapm_widget *w,
 			switch (w->id) {
 			case snd_soc_dapm_switch:
 			case snd_soc_dapm_mixer:
-			case snd_soc_dapm_out_drv:
 				wname_in_long_name = true;
 				kcname_in_long_name = true;
 				break;
@@ -1880,19 +1873,19 @@ static ssize_t dapm_widget_power_read_file(struct file *file,
 	out = is_connected_output_ep(w, NULL);
 	dapm_clear_walk_output(w->dapm, &w->sinks);
 
-	ret = scnprintf(buf, PAGE_SIZE, "%s: %s%s  in %d out %d",
+	ret = snprintf(buf, PAGE_SIZE, "%s: %s%s  in %d out %d",
 		       w->name, w->power ? "On" : "Off",
 		       w->force ? " (forced)" : "", in, out);
 
 	if (w->reg >= 0)
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret,
+		ret += snprintf(buf + ret, PAGE_SIZE - ret,
 				" - R%d(0x%x) mask 0x%x",
 				w->reg, w->reg, w->mask << w->shift);
 
-	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
+	ret += snprintf(buf + ret, PAGE_SIZE - ret, "\n");
 
 	if (w->sname)
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret, " stream %s %s\n",
+		ret += snprintf(buf + ret, PAGE_SIZE - ret, " stream %s %s\n",
 				w->sname,
 				w->active ? "active" : "inactive");
 
@@ -1911,7 +1904,7 @@ static ssize_t dapm_widget_power_read_file(struct file *file,
 			continue;
 
 		if (p->connect)
-			ret += scnprintf(buf + ret, PAGE_SIZE - ret,
+			ret += snprintf(buf + ret, PAGE_SIZE - ret,
 					" out \"%s\" \"%s\"\n",
 					p->name ? p->name : "static",
 					p->sink->name);
@@ -2802,9 +2795,6 @@ int snd_soc_dapm_get_volsw(struct snd_kcontrol *kcontrol,
 	}
 	mutex_unlock(&card->dapm_mutex);
 
-	if (ret)
-		return ret;
-
 	if (invert)
 		ucontrol->value.integer.value[0] = max - val;
 	else
@@ -2951,7 +2941,7 @@ int snd_soc_dapm_put_enum_double(struct snd_kcontrol *kcontrol,
 	if (e->shift_l != e->shift_r) {
 		if (item[1] > e->items)
 			return -EINVAL;
-		val |= snd_soc_enum_item_to_val(e, item[1]) << e->shift_r;
+		val |= snd_soc_enum_item_to_val(e, item[1]) << e->shift_l;
 		mask |= e->mask << e->shift_r;
 	}
 
@@ -3356,16 +3346,6 @@ int snd_soc_dapm_new_dai_widgets(struct snd_soc_dapm_context *dapm,
 			template.name);
 
 		w = snd_soc_dapm_new_control(dapm, &template);
-		if (IS_ERR(w)) {
-			int ret = PTR_ERR(w);
-
-			/* Do not nag about probe deferrals */
-			if (ret != -EPROBE_DEFER)
-				dev_err(dapm->dev,
-				"ASoC: Failed to create %s widget (%d)\n",
-				dai->driver->playback.stream_name, ret);
-			return ret;
-		}
 		if (!w) {
 			dev_err(dapm->dev, "ASoC: Failed to create %s widget\n",
 				dai->driver->playback.stream_name);
@@ -3385,16 +3365,6 @@ int snd_soc_dapm_new_dai_widgets(struct snd_soc_dapm_context *dapm,
 			template.name);
 
 		w = snd_soc_dapm_new_control(dapm, &template);
-		if (IS_ERR(w)) {
-			int ret = PTR_ERR(w);
-
-			/* Do not nag about probe deferrals */
-			if (ret != -EPROBE_DEFER)
-				dev_err(dapm->dev,
-				"ASoC: Failed to create %s widget (%d)\n",
-				dai->driver->playback.stream_name, ret);
-			return ret;
-		}
 		if (!w) {
 			dev_err(dapm->dev, "ASoC: Failed to create %s widget\n",
 				dai->driver->capture.stream_name);
@@ -3932,7 +3902,7 @@ static void soc_dapm_shutdown_dapm(struct snd_soc_dapm_context *dapm)
 			continue;
 		if (w->power) {
 			dapm_seq_insert(w, &down_list, false);
-			w->new_power = 0;
+			w->power = 0;
 			powerdown = 1;
 		}
 	}

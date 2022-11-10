@@ -412,9 +412,6 @@ struct mac80211_hwsim_data {
 	struct mac_address addresses[2];
 	int channels, idx;
 	bool use_chanctx;
-	bool destroy_on_close;
-	struct work_struct destroy_work;
-	u32 portid;
 
 	struct ieee80211_channel *tmp_chan;
 	struct delayed_work roc_done;
@@ -479,14 +476,6 @@ static struct genl_family hwsim_genl_family = {
 	.maxattr = HWSIM_ATTR_MAX,
 };
 
-enum hwsim_multicast_groups {
-	HWSIM_MCGRP_CONFIG,
-};
-
-static const struct genl_multicast_group hwsim_mcgrps[] = {
-	[HWSIM_MCGRP_CONFIG] = { .name = "config", },
-};
-
 /* MAC80211_HWSIM netlink policy */
 
 static const struct nla_policy hwsim_genl_policy[HWSIM_ATTR_MAX + 1] = {
@@ -507,9 +496,6 @@ static const struct nla_policy hwsim_genl_policy[HWSIM_ATTR_MAX + 1] = {
 	[HWSIM_ATTR_REG_CUSTOM_REG] = { .type = NLA_U32 },
 	[HWSIM_ATTR_REG_STRICT_REG] = { .type = NLA_FLAG },
 	[HWSIM_ATTR_SUPPORT_P2P_DEVICE] = { .type = NLA_FLAG },
-	[HWSIM_ATTR_DESTROY_RADIO_ON_CLOSE] = { .type = NLA_FLAG },
-	[HWSIM_ATTR_RADIO_NAME] = { .type = NLA_STRING },
-	[HWSIM_ATTR_NO_VIF] = { .type = NLA_FLAG },
 };
 
 static void mac80211_hwsim_tx_frame(struct ieee80211_hw *hw,
@@ -611,30 +597,25 @@ static int hwsim_fops_ps_write(void *dat, u64 val)
 	    val != PS_MANUAL_POLL)
 		return -EINVAL;
 
-	if (val == PS_MANUAL_POLL) {
-		if (data->ps != PS_ENABLED)
-			return -EINVAL;
-		local_bh_disable();
-		ieee80211_iterate_active_interfaces_atomic(
-			data->hw, IEEE80211_IFACE_ITER_NORMAL,
-			hwsim_send_ps_poll, data);
-		local_bh_enable();
-		return 0;
-	}
 	old_ps = data->ps;
 	data->ps = val;
 
-	local_bh_disable();
-	if (old_ps == PS_DISABLED && val != PS_DISABLED) {
-		ieee80211_iterate_active_interfaces_atomic(
-			data->hw, IEEE80211_IFACE_ITER_NORMAL,
-			hwsim_send_nullfunc_ps, data);
+	if (val == PS_MANUAL_POLL) {
+		ieee80211_iterate_active_interfaces(data->hw,
+						    IEEE80211_IFACE_ITER_NORMAL,
+						    hwsim_send_ps_poll, data);
+		data->ps_poll_pending = true;
+	} else if (old_ps == PS_DISABLED && val != PS_DISABLED) {
+		ieee80211_iterate_active_interfaces(data->hw,
+						    IEEE80211_IFACE_ITER_NORMAL,
+						    hwsim_send_nullfunc_ps,
+						    data);
 	} else if (old_ps != PS_DISABLED && val == PS_DISABLED) {
-		ieee80211_iterate_active_interfaces_atomic(
-			data->hw, IEEE80211_IFACE_ITER_NORMAL,
-			hwsim_send_nullfunc_no_ps, data);
+		ieee80211_iterate_active_interfaces(data->hw,
+						    IEEE80211_IFACE_ITER_NORMAL,
+						    hwsim_send_nullfunc_no_ps,
+						    data);
 	}
-	local_bh_enable();
 
 	return 0;
 }
@@ -881,7 +862,7 @@ static void mac80211_hwsim_tx_frame_nl(struct ieee80211_hw *hw,
 	if (skb_queue_len(&data->pending) >= MAX_QUEUE) {
 		/* Droping until WARN_QUEUE level */
 		while (skb_queue_len(&data->pending) >= WARN_QUEUE)
-			ieee80211_free_txskb(hw, skb_dequeue(&data->pending));
+			skb_dequeue(&data->pending);
 	}
 
 	skb = genlmsg_new(GENLMSG_DEFAULT_SIZE, GFP_ATOMIC);
@@ -895,7 +876,8 @@ static void mac80211_hwsim_tx_frame_nl(struct ieee80211_hw *hw,
 		goto nla_put_failure;
 	}
 
-	if (nla_put(skb, HWSIM_ATTR_ADDR_TRANSMITTER, ETH_ALEN, hdr->addr2))
+	if (nla_put(skb, HWSIM_ATTR_ADDR_TRANSMITTER,
+		    ETH_ALEN, data->addresses[1].addr))
 		goto nla_put_failure;
 
 	/* We get the skb->data */
@@ -939,7 +921,6 @@ static void mac80211_hwsim_tx_frame_nl(struct ieee80211_hw *hw,
 
 nla_put_failure:
 	printk(KERN_DEBUG "mac80211_hwsim: error occurred in %s\n", __func__);
-	ieee80211_free_txskb(hw, my_skb);
 }
 
 static bool hwsim_chans_compat(struct ieee80211_channel *c1,
@@ -1962,124 +1943,10 @@ static const struct ieee80211_ops mac80211_hwsim_ops = {
 
 static struct ieee80211_ops mac80211_hwsim_mchan_ops;
 
-struct hwsim_new_radio_params {
-	unsigned int channels;
-	const char *reg_alpha2;
-	const struct ieee80211_regdomain *regd;
-	bool reg_strict;
-	bool p2p_device;
-	bool use_chanctx;
-	bool destroy_on_close;
-	const char *hwname;
-	bool no_vif;
-};
-
-static void hwsim_mcast_config_msg(struct sk_buff *mcast_skb,
-				   struct genl_info *info)
-{
-	if (info)
-		genl_notify(&hwsim_genl_family, mcast_skb,
-			    genl_info_net(info), info->snd_portid,
-			    HWSIM_MCGRP_CONFIG, info->nlhdr, GFP_KERNEL);
-	else
-		genlmsg_multicast(&hwsim_genl_family, mcast_skb, 0,
-				  HWSIM_MCGRP_CONFIG, GFP_KERNEL);
-}
-
-static struct sk_buff *build_radio_msg(int cmd, int id,
-				       struct hwsim_new_radio_params *param)
-{
-	struct sk_buff *skb;
-	void *data;
-	int ret;
-
-	skb = genlmsg_new(GENLMSG_DEFAULT_SIZE, GFP_KERNEL);
-	if (!skb)
-		return NULL;
-
-	data = genlmsg_put(skb, 0, 0, &hwsim_genl_family, 0, cmd);
-	if (!data)
-		goto error;
-
-	ret = nla_put_u32(skb, HWSIM_ATTR_RADIO_ID, id);
-	if (ret < 0)
-		goto error;
-
-	if (param->channels) {
-		ret = nla_put_u32(skb, HWSIM_ATTR_CHANNELS, param->channels);
-		if (ret < 0)
-			goto error;
-	}
-
-	if (param->reg_alpha2) {
-		ret = nla_put(skb, HWSIM_ATTR_REG_HINT_ALPHA2, 2,
-			      param->reg_alpha2);
-		if (ret < 0)
-			goto error;
-	}
-
-	if (param->regd) {
-		int i;
-
-		for (i = 0; i < ARRAY_SIZE(hwsim_world_regdom_custom); i++) {
-			if (hwsim_world_regdom_custom[i] != param->regd)
-				continue;
-
-			ret = nla_put_u32(skb, HWSIM_ATTR_REG_CUSTOM_REG, i);
-			if (ret < 0)
-				goto error;
-			break;
-		}
-	}
-
-	if (param->reg_strict) {
-		ret = nla_put_flag(skb, HWSIM_ATTR_REG_STRICT_REG);
-		if (ret < 0)
-			goto error;
-	}
-
-	if (param->p2p_device) {
-		ret = nla_put_flag(skb, HWSIM_ATTR_SUPPORT_P2P_DEVICE);
-		if (ret < 0)
-			goto error;
-	}
-
-	if (param->use_chanctx) {
-		ret = nla_put_flag(skb, HWSIM_ATTR_USE_CHANCTX);
-		if (ret < 0)
-			goto error;
-	}
-
-	if (param->hwname) {
-		ret = nla_put(skb, HWSIM_ATTR_RADIO_NAME,
-			      strlen(param->hwname), param->hwname);
-		if (ret < 0)
-			goto error;
-	}
-
-	genlmsg_end(skb, data);
-
-	return skb;
-
-error:
-	nlmsg_free(skb);
-	return NULL;
-}
-
-static void hswim_mcast_new_radio(int id, struct genl_info *info,
-				  struct hwsim_new_radio_params *param)
-{
-	struct sk_buff *mcast_skb;
-
-	mcast_skb = build_radio_msg(HWSIM_CMD_NEW_RADIO, id, param);
-	if (!mcast_skb)
-		return;
-
-	hwsim_mcast_config_msg(mcast_skb, info);
-}
-
-static int mac80211_hwsim_new_radio(struct genl_info *info,
-				    struct hwsim_new_radio_params *param)
+static int mac80211_hwsim_create_radio(int channels, const char *reg_alpha2,
+				       const struct ieee80211_regdomain *regd,
+				       bool reg_strict, bool p2p_device,
+				       bool use_chanctx)
 {
 	int err;
 	u8 addr[ETH_ALEN];
@@ -2089,16 +1956,16 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 	const struct ieee80211_ops *ops = &mac80211_hwsim_ops;
 	int idx;
 
-	if (WARN_ON(param->channels > 1 && !param->use_chanctx))
+	if (WARN_ON(channels > 1 && !use_chanctx))
 		return -EINVAL;
 
 	spin_lock_bh(&hwsim_radio_lock);
 	idx = hwsim_radio_idx++;
 	spin_unlock_bh(&hwsim_radio_lock);
 
-	if (param->use_chanctx)
+	if (use_chanctx)
 		ops = &mac80211_hwsim_mchan_ops;
-	hw = ieee80211_alloc_hw_nm(sizeof(*data), ops, param->hwname);
+	hw = ieee80211_alloc_hw(sizeof(*data), ops);
 	if (!hw) {
 		printk(KERN_DEBUG "mac80211_hwsim: ieee80211_alloc_hw failed\n");
 		err = -ENOMEM;
@@ -2136,12 +2003,9 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 	hw->wiphy->n_addresses = 2;
 	hw->wiphy->addresses = data->addresses;
 
-	data->channels = param->channels;
-	data->use_chanctx = param->use_chanctx;
+	data->channels = channels;
+	data->use_chanctx = use_chanctx;
 	data->idx = idx;
-	data->destroy_on_close = param->destroy_on_close;
-	if (info)
-		data->portid = info->snd_portid;
 
 	if (data->use_chanctx) {
 		hw->wiphy->max_scan_ssids = 255;
@@ -2150,12 +2014,12 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 		/* For channels > 1 DFS is not allowed */
 		hw->wiphy->n_iface_combinations = 1;
 		hw->wiphy->iface_combinations = &data->if_combination;
-		if (param->p2p_device)
+		if (p2p_device)
 			data->if_combination = hwsim_if_comb_p2p_dev[0];
 		else
 			data->if_combination = hwsim_if_comb[0];
 		data->if_combination.num_different_channels = data->channels;
-	} else if (param->p2p_device) {
+	} else if (p2p_device) {
 		hw->wiphy->iface_combinations = hwsim_if_comb_p2p_dev;
 		hw->wiphy->n_iface_combinations =
 			ARRAY_SIZE(hwsim_if_comb_p2p_dev);
@@ -2176,7 +2040,7 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 				     BIT(NL80211_IFTYPE_ADHOC) |
 				     BIT(NL80211_IFTYPE_MESH_POINT);
 
-	if (param->p2p_device)
+	if (p2p_device)
 		hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_P2P_DEVICE);
 
 	hw->flags = IEEE80211_HW_MFP_CAPABLE |
@@ -2278,21 +2142,14 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 	hw->max_rates = 4;
 	hw->max_rate_tries = 11;
 
-	if (param->reg_strict)
+	if (reg_strict)
 		hw->wiphy->regulatory_flags |= REGULATORY_STRICT_REG;
-	if (param->regd) {
+	if (regd) {
 		hw->wiphy->regulatory_flags |= REGULATORY_CUSTOM_REG;
-		wiphy_apply_custom_regulatory(hw->wiphy, param->regd);
+		wiphy_apply_custom_regulatory(hw->wiphy, regd);
 		/* give the regulatory workqueue a chance to run */
 		schedule_timeout_interruptible(1);
 	}
-
-	if (param->no_vif)
-		hw->flags |= IEEE80211_HW_NO_AUTO_VIF;
-
-	tasklet_hrtimer_init(&data->beacon_timer,
-			     mac80211_hwsim_beacon,
-			     CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
 
 	err = ieee80211_register_hw(hw);
 	if (err < 0) {
@@ -2303,8 +2160,8 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 
 	wiphy_debug(hw->wiphy, "hwaddr %pM registered\n", hw->wiphy->perm_addr);
 
-	if (param->reg_alpha2)
-		regulatory_hint(hw->wiphy, param->reg_alpha2);
+	if (reg_alpha2)
+		regulatory_hint(hw->wiphy, reg_alpha2);
 
 	data->debugfs = debugfs_create_dir("hwsim", hw->wiphy->debugfsdir);
 	debugfs_create_file("ps", 0666, data->debugfs, data, &hwsim_fops_ps);
@@ -2315,11 +2172,13 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 				    data->debugfs,
 				    data, &hwsim_simulate_radar);
 
+	tasklet_hrtimer_init(&data->beacon_timer,
+			     mac80211_hwsim_beacon,
+			     CLOCK_MONOTONIC_RAW, HRTIMER_MODE_ABS);
+
 	spin_lock_bh(&hwsim_radio_lock);
 	list_add_tail(&data->list, &hwsim_radios);
 	spin_unlock_bh(&hwsim_radio_lock);
-
-	hswim_mcast_new_radio(idx, info, param);
 
 	return idx;
 
@@ -2333,46 +2192,8 @@ failed:
 	return err;
 }
 
-static void hwsim_mcast_del_radio(int id, const char *hwname,
-				  struct genl_info *info)
+static void mac80211_hwsim_destroy_radio(struct mac80211_hwsim_data *data)
 {
-	struct sk_buff *skb;
-	void *data;
-	int ret;
-
-	skb = genlmsg_new(GENLMSG_DEFAULT_SIZE, GFP_KERNEL);
-	if (!skb)
-		return;
-
-	data = genlmsg_put(skb, 0, 0, &hwsim_genl_family, 0,
-			   HWSIM_CMD_DEL_RADIO);
-	if (!data)
-		goto error;
-
-	ret = nla_put_u32(skb, HWSIM_ATTR_RADIO_ID, id);
-	if (ret < 0)
-		goto error;
-
-	ret = nla_put(skb, HWSIM_ATTR_RADIO_NAME, strlen(hwname),
-		      hwname);
-	if (ret < 0)
-		goto error;
-
-	genlmsg_end(skb, data);
-
-	hwsim_mcast_config_msg(skb, info);
-
-	return;
-
-error:
-	nlmsg_free(skb);
-}
-
-static void mac80211_hwsim_del_radio(struct mac80211_hwsim_data *data,
-				     const char *hwname,
-				     struct genl_info *info)
-{
-	hwsim_mcast_del_radio(data->idx, hwname, info);
 	debugfs_remove_recursive(data->debugfs);
 	ieee80211_unregister_hw(data->hw);
 	device_release_driver(data->dev);
@@ -2390,8 +2211,7 @@ static void mac80211_hwsim_free(void)
 						list))) {
 		list_del(&data->list);
 		spin_unlock_bh(&hwsim_radio_lock);
-		mac80211_hwsim_del_radio(data, wiphy_name(data->hw->wiphy),
-					 NULL);
+		mac80211_hwsim_destroy_radio(data);
 		spin_lock_bh(&hwsim_radio_lock);
 	}
 	spin_unlock_bh(&hwsim_radio_lock);
@@ -2423,7 +2243,7 @@ static struct mac80211_hwsim_data *get_hwsim_data_ref_from_addr(const u8 *addr)
 
 	spin_lock_bh(&hwsim_radio_lock);
 	list_for_each_entry(data, &hwsim_radios, list) {
-		if (mac80211_hwsim_addr_match(data, addr)) {
+		if (memcmp(data->addresses[1].addr, addr, ETH_ALEN) == 0) {
 			_found = true;
 			break;
 		}
@@ -2610,95 +2430,58 @@ static int hwsim_register_received_nl(struct sk_buff *skb_2,
 	return 0;
 }
 
-static int hwsim_new_radio_nl(struct sk_buff *msg, struct genl_info *info)
+static int hwsim_create_radio_nl(struct sk_buff *msg, struct genl_info *info)
 {
-	struct hwsim_new_radio_params param = { 0 };
-	const char *hwname = NULL;
-	int ret;
-
-	param.reg_strict = info->attrs[HWSIM_ATTR_REG_STRICT_REG];
-	param.p2p_device = info->attrs[HWSIM_ATTR_SUPPORT_P2P_DEVICE];
-	param.channels = channels;
-	param.destroy_on_close =
-		info->attrs[HWSIM_ATTR_DESTROY_RADIO_ON_CLOSE];
+	unsigned int chans = channels;
+	const char *alpha2 = NULL;
+	const struct ieee80211_regdomain *regd = NULL;
+	bool reg_strict = info->attrs[HWSIM_ATTR_REG_STRICT_REG];
+	bool p2p_device = info->attrs[HWSIM_ATTR_SUPPORT_P2P_DEVICE];
+	bool use_chanctx;
 
 	if (info->attrs[HWSIM_ATTR_CHANNELS])
-		param.channels = nla_get_u32(info->attrs[HWSIM_ATTR_CHANNELS]);
-
-	if (info->attrs[HWSIM_ATTR_NO_VIF])
-		param.no_vif = true;
-
-	if (info->attrs[HWSIM_ATTR_RADIO_NAME]) {
-		hwname = kstrndup((char *)nla_data(info->attrs[HWSIM_ATTR_RADIO_NAME]),
-				  nla_len(info->attrs[HWSIM_ATTR_RADIO_NAME]),
-				  GFP_KERNEL);
-		if (!hwname)
-			return -ENOMEM;
-		param.hwname = hwname;
-	}
+		chans = nla_get_u32(info->attrs[HWSIM_ATTR_CHANNELS]);
 
 	if (info->attrs[HWSIM_ATTR_USE_CHANCTX])
-		param.use_chanctx = true;
+		use_chanctx = true;
 	else
-		param.use_chanctx = (param.channels > 1);
+		use_chanctx = (chans > 1);
 
 	if (info->attrs[HWSIM_ATTR_REG_HINT_ALPHA2])
-		param.reg_alpha2 =
-			nla_data(info->attrs[HWSIM_ATTR_REG_HINT_ALPHA2]);
+		alpha2 = nla_data(info->attrs[HWSIM_ATTR_REG_HINT_ALPHA2]);
 
 	if (info->attrs[HWSIM_ATTR_REG_CUSTOM_REG]) {
 		u32 idx = nla_get_u32(info->attrs[HWSIM_ATTR_REG_CUSTOM_REG]);
 
-		if (idx >= ARRAY_SIZE(hwsim_world_regdom_custom)) {
-			kfree(hwname);
+		if (idx >= ARRAY_SIZE(hwsim_world_regdom_custom))
 			return -EINVAL;
-		}
-		param.regd = hwsim_world_regdom_custom[idx];
+		regd = hwsim_world_regdom_custom[idx];
 	}
 
-	ret = mac80211_hwsim_new_radio(info, &param);
-	kfree(hwname);
-	return ret;
+	return mac80211_hwsim_create_radio(chans, alpha2, regd, reg_strict,
+					   p2p_device, use_chanctx);
 }
 
-static int hwsim_del_radio_nl(struct sk_buff *msg, struct genl_info *info)
+static int hwsim_destroy_radio_nl(struct sk_buff *msg, struct genl_info *info)
 {
 	struct mac80211_hwsim_data *data;
-	s64 idx = -1;
-	const char *hwname = NULL;
+	int idx;
 
-	if (info->attrs[HWSIM_ATTR_RADIO_ID]) {
-		idx = nla_get_u32(info->attrs[HWSIM_ATTR_RADIO_ID]);
-	} else if (info->attrs[HWSIM_ATTR_RADIO_NAME]) {
-		hwname = kstrndup((char *)nla_data(info->attrs[HWSIM_ATTR_RADIO_NAME]),
-				  nla_len(info->attrs[HWSIM_ATTR_RADIO_NAME]),
-				  GFP_KERNEL);
-		if (!hwname)
-			return -ENOMEM;
-	} else
+	if (!info->attrs[HWSIM_ATTR_RADIO_ID])
 		return -EINVAL;
+	idx = nla_get_u32(info->attrs[HWSIM_ATTR_RADIO_ID]);
 
 	spin_lock_bh(&hwsim_radio_lock);
 	list_for_each_entry(data, &hwsim_radios, list) {
-		if (idx >= 0) {
-			if (data->idx != idx)
-				continue;
-		} else {
-			if (!hwname ||
-			    strcmp(hwname, wiphy_name(data->hw->wiphy)))
-				continue;
-		}
-
+		if (data->idx != idx)
+			continue;
 		list_del(&data->list);
 		spin_unlock_bh(&hwsim_radio_lock);
-		mac80211_hwsim_del_radio(data, wiphy_name(data->hw->wiphy),
-					 info);
-		kfree(hwname);
+		mac80211_hwsim_destroy_radio(data);
 		return 0;
 	}
 	spin_unlock_bh(&hwsim_radio_lock);
 
-	kfree(hwname);
 	return -ENODEV;
 }
 
@@ -2721,41 +2504,18 @@ static const struct genl_ops hwsim_ops[] = {
 		.doit = hwsim_tx_info_frame_received_nl,
 	},
 	{
-		.cmd = HWSIM_CMD_NEW_RADIO,
+		.cmd = HWSIM_CMD_CREATE_RADIO,
 		.policy = hwsim_genl_policy,
-		.doit = hwsim_new_radio_nl,
+		.doit = hwsim_create_radio_nl,
 		.flags = GENL_ADMIN_PERM,
 	},
 	{
-		.cmd = HWSIM_CMD_DEL_RADIO,
+		.cmd = HWSIM_CMD_DESTROY_RADIO,
 		.policy = hwsim_genl_policy,
-		.doit = hwsim_del_radio_nl,
+		.doit = hwsim_destroy_radio_nl,
 		.flags = GENL_ADMIN_PERM,
 	},
 };
-
-static void destroy_radio(struct work_struct *work)
-{
-	struct mac80211_hwsim_data *data =
-		container_of(work, struct mac80211_hwsim_data, destroy_work);
-
-	mac80211_hwsim_del_radio(data, wiphy_name(data->hw->wiphy), NULL);
-}
-
-static void remove_user_radios(u32 portid)
-{
-	struct mac80211_hwsim_data *entry, *tmp;
-
-	spin_lock_bh(&hwsim_radio_lock);
-	list_for_each_entry_safe(entry, tmp, &hwsim_radios, list) {
-		if (entry->destroy_on_close && entry->portid == portid) {
-			list_del(&entry->list);
-			INIT_WORK(&entry->destroy_work, destroy_radio);
-			schedule_work(&entry->destroy_work);
-		}
-	}
-	spin_unlock_bh(&hwsim_radio_lock);
-}
 
 static int mac80211_hwsim_netlink_notify(struct notifier_block *nb,
 					 unsigned long state,
@@ -2765,8 +2525,6 @@ static int mac80211_hwsim_netlink_notify(struct notifier_block *nb,
 
 	if (state != NETLINK_URELEASE)
 		return NOTIFY_DONE;
-
-	remove_user_radios(notify->portid);
 
 	if (notify->portid == wmediumd_portid) {
 		printk(KERN_INFO "mac80211_hwsim: wmediumd released netlink"
@@ -2787,9 +2545,7 @@ static int hwsim_init_netlink(void)
 
 	printk(KERN_INFO "mac80211_hwsim: initializing netlink\n");
 
-	rc = genl_register_family_with_ops_groups(&hwsim_genl_family,
-						  hwsim_ops,
-						  hwsim_mcgrps);
+	rc = genl_register_family_with_ops(&hwsim_genl_family, hwsim_ops);
 	if (rc)
 		goto failure;
 
@@ -2844,79 +2600,75 @@ static int __init init_mac80211_hwsim(void)
 	if (err)
 		return err;
 
-	err = hwsim_init_netlink();
-	if (err)
-		goto out_unregister_driver;
-
 	hwsim_class = class_create(THIS_MODULE, "mac80211_hwsim");
 	if (IS_ERR(hwsim_class)) {
 		err = PTR_ERR(hwsim_class);
-		goto out_exit_netlink;
+		goto out_unregister_driver;
 	}
 
 	for (i = 0; i < radios; i++) {
-		struct hwsim_new_radio_params param = { 0 };
-
-		param.channels = channels;
+		const char *reg_alpha2 = NULL;
+		const struct ieee80211_regdomain *regd = NULL;
+		bool reg_strict = false;
 
 		switch (regtest) {
 		case HWSIM_REGTEST_DIFF_COUNTRY:
 			if (i < ARRAY_SIZE(hwsim_alpha2s))
-				param.reg_alpha2 = hwsim_alpha2s[i];
+				reg_alpha2 = hwsim_alpha2s[i];
 			break;
 		case HWSIM_REGTEST_DRIVER_REG_FOLLOW:
 			if (!i)
-				param.reg_alpha2 = hwsim_alpha2s[0];
+				reg_alpha2 = hwsim_alpha2s[0];
 			break;
 		case HWSIM_REGTEST_STRICT_ALL:
-			param.reg_strict = true;
+			reg_strict = true;
 		case HWSIM_REGTEST_DRIVER_REG_ALL:
-			param.reg_alpha2 = hwsim_alpha2s[0];
+			reg_alpha2 = hwsim_alpha2s[0];
 			break;
 		case HWSIM_REGTEST_WORLD_ROAM:
 			if (i == 0)
-				param.regd = &hwsim_world_regdom_custom_01;
+				regd = &hwsim_world_regdom_custom_01;
 			break;
 		case HWSIM_REGTEST_CUSTOM_WORLD:
-			param.regd = &hwsim_world_regdom_custom_01;
+			regd = &hwsim_world_regdom_custom_01;
 			break;
 		case HWSIM_REGTEST_CUSTOM_WORLD_2:
 			if (i == 0)
-				param.regd = &hwsim_world_regdom_custom_01;
+				regd = &hwsim_world_regdom_custom_01;
 			else if (i == 1)
-				param.regd = &hwsim_world_regdom_custom_02;
+				regd = &hwsim_world_regdom_custom_02;
 			break;
 		case HWSIM_REGTEST_STRICT_FOLLOW:
 			if (i == 0) {
-				param.reg_strict = true;
-				param.reg_alpha2 = hwsim_alpha2s[0];
+				reg_strict = true;
+				reg_alpha2 = hwsim_alpha2s[0];
 			}
 			break;
 		case HWSIM_REGTEST_STRICT_AND_DRIVER_REG:
 			if (i == 0) {
-				param.reg_strict = true;
-				param.reg_alpha2 = hwsim_alpha2s[0];
+				reg_strict = true;
+				reg_alpha2 = hwsim_alpha2s[0];
 			} else if (i == 1) {
-				param.reg_alpha2 = hwsim_alpha2s[1];
+				reg_alpha2 = hwsim_alpha2s[1];
 			}
 			break;
 		case HWSIM_REGTEST_ALL:
 			switch (i) {
 			case 0:
-				param.regd = &hwsim_world_regdom_custom_01;
+				regd = &hwsim_world_regdom_custom_01;
 				break;
 			case 1:
-				param.regd = &hwsim_world_regdom_custom_02;
+				regd = &hwsim_world_regdom_custom_02;
 				break;
 			case 2:
-				param.reg_alpha2 = hwsim_alpha2s[0];
+				reg_alpha2 = hwsim_alpha2s[0];
 				break;
 			case 3:
-				param.reg_alpha2 = hwsim_alpha2s[1];
+				reg_alpha2 = hwsim_alpha2s[1];
 				break;
 			case 4:
-				param.reg_strict = true;
-				param.reg_alpha2 = hwsim_alpha2s[2];
+				reg_strict = true;
+				reg_alpha2 = hwsim_alpha2s[2];
 				break;
 			}
 			break;
@@ -2924,10 +2676,10 @@ static int __init init_mac80211_hwsim(void)
 			break;
 		}
 
-		param.p2p_device = support_p2p_device;
-		param.use_chanctx = channels > 1;
-
-		err = mac80211_hwsim_new_radio(NULL, &param);
+		err = mac80211_hwsim_create_radio(channels, reg_alpha2,
+						  regd, reg_strict,
+						  support_p2p_device,
+						  channels > 1);
 		if (err < 0)
 			goto out_free_radios;
 	}
@@ -2953,14 +2705,16 @@ static int __init init_mac80211_hwsim(void)
 	}
 	rtnl_unlock();
 
+	err = hwsim_init_netlink();
+	if (err < 0)
+		goto out_free_mon;
+
 	return 0;
 
 out_free_mon:
 	free_netdev(hwsim_mon);
 out_free_radios:
 	mac80211_hwsim_free();
-out_exit_netlink:
-	hwsim_exit_netlink();
 out_unregister_driver:
 	platform_driver_unregister(&mac80211_hwsim_driver);
 	return err;

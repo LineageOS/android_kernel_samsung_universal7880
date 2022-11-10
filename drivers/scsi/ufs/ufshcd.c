@@ -672,7 +672,6 @@ unblock_reqs:
 int ufshcd_hold(struct ufs_hba *hba, bool async)
 {
 	int rc = 0;
-	bool flush_result;
 	unsigned long flags;
 
 	if (!ufshcd_is_clkgating_allowed(hba))
@@ -697,15 +696,8 @@ start:
 		 */
 		if (ufshcd_can_hibern8_during_gating(hba) &&
 		    ufshcd_is_link_hibern8(hba)) {
-			if (async) {
-				rc = -EAGAIN;
-				hba->clk_gating.active_reqs--;
-				break;
-			}
 			spin_unlock_irqrestore(hba->host->host_lock, flags);
-			flush_result = flush_work(&hba->clk_gating.ungate_work);
-			if (hba->clk_gating.is_suspended && !flush_result)
-				goto out;
+			flush_work(&hba->clk_gating.ungate_work);
 			spin_lock_irqsave(hba->host->host_lock, flags);
 			goto start;
 		}
@@ -991,8 +983,7 @@ int ufshcd_copy_query_response(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 	memcpy(&query_res->upiu_res, &lrbp->ucd_rsp_ptr->qr, QUERY_OSF_SIZE);
 
 	/* Get the descriptor */
-	if (hba->dev_cmd.query.descriptor &&
-	    lrbp->ucd_rsp_ptr->qr.opcode == UPIU_QUERY_OPCODE_READ_DESC) {
+	if (lrbp->ucd_rsp_ptr->qr.opcode == UPIU_QUERY_OPCODE_READ_DESC) {
 		u8 *descp = (u8 *)lrbp->ucd_rsp_ptr +
 				GENERAL_UPIU_REQUEST_SIZE;
 		u16 resp_len;
@@ -1663,7 +1654,6 @@ static int ufshcd_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 	err = ufshcd_map_sg(hba, lrbp);
 #endif
 	if (err) {
-		ufshcd_release(hba);
 		lrbp->cmd = NULL;
 		clear_bit_unlock(tag, &hba->lrb_in_use);
 		goto out;
@@ -2105,10 +2095,10 @@ static int ufshcd_query_descriptor(struct ufs_hba *hba,
 		goto out_unlock;
 	}
 
+	hba->dev_cmd.query.descriptor = NULL;
 	*buf_len = be16_to_cpu(response->upiu_res.length);
 
 out_unlock:
-	hba->dev_cmd.query.descriptor = NULL;
 	mutex_unlock(&hba->dev_cmd.lock);
 out:
 	ufshcd_release(hba);
@@ -3720,10 +3710,10 @@ static void __ufshcd_transfer_req_compl(struct ufs_hba *hba, int reason)
 					completion = ktime_get();
 					delta_us = ktime_us_delta(completion,
 						  req->lat_hist_io_start);
-					blk_update_latency_hist(
-						(rq_data_dir(req) == READ) ?
-						&hba->io_lat_read :
-						&hba->io_lat_write, delta_us);
+					/* rq_data_dir() => true if WRITE */
+					blk_update_latency_hist(&hba->io_lat_s,
+						(rq_data_dir(req) == READ),
+						delta_us);
 				}
 			}
 			/* Do not touch lrbp after scsi done */
@@ -3898,25 +3888,18 @@ out:
 }
 
 /**
- * ufshcd_force_reset_auto_bkops - force reset auto bkops state
+ * ufshcd_force_reset_auto_bkops - force enable of auto bkops
  * @hba: per adapter instance
  *
  * After a device reset the device may toggle the BKOPS_EN flag
  * to default value. The s/w tracking variables should be updated
- * as well. This function would change the auto-bkops state based on
- * UFSHCD_CAP_KEEP_AUTO_BKOPS_ENABLED_EXCEPT_SUSPEND.
+ * as well. Do this by forcing enable of auto bkops.
  */
-static void ufshcd_force_reset_auto_bkops(struct ufs_hba *hba)
+static void  ufshcd_force_reset_auto_bkops(struct ufs_hba *hba)
 {
-	if (ufshcd_keep_autobkops_enabled_except_suspend(hba)) {
-		hba->auto_bkops_enabled = false;
-		hba->ee_ctrl_mask |= MASK_EE_URGENT_BKOPS;
-		ufshcd_enable_auto_bkops(hba);
-	} else {
-		hba->auto_bkops_enabled = true;
-		hba->ee_ctrl_mask &= ~MASK_EE_URGENT_BKOPS;
-		ufshcd_disable_auto_bkops(hba);
-	}
+	hba->auto_bkops_enabled = false;
+	hba->ee_ctrl_mask |= MASK_EE_URGENT_BKOPS;
+	ufshcd_enable_auto_bkops(hba);
 }
 
 static inline int ufshcd_get_bkops_status(struct ufs_hba *hba, u32 *status)
@@ -4373,16 +4356,19 @@ static int ufshcd_eh_device_reset_handler(struct scsi_cmnd *cmd)
 {
 	struct Scsi_Host *host;
 	struct ufs_hba *hba;
+	unsigned int tag;
 	u32 pos;
 	int err;
-	u8 resp = 0xF, lun;
+	u8 resp = 0xF;
+	struct ufshcd_lrb *lrbp;
 	unsigned long flags;
 
 	host = cmd->device->host;
 	hba = shost_priv(host);
+	tag = cmd->request->tag;
 
-	lun = ufshcd_scsi_to_upiu_lun(cmd->device->lun);
-	err = ufshcd_issue_tm_cmd(hba, lun, 0, UFS_LOGICAL_RESET, &resp);
+	lrbp = &hba->lrb[tag];
+	err = ufshcd_issue_tm_cmd(hba, lrbp->lun, 0, UFS_LOGICAL_RESET, &resp);
 	if (err || resp != UPIU_TASK_MANAGEMENT_FUNC_COMPL) {
 		if (!err)
 			err = resp;
@@ -4391,7 +4377,7 @@ static int ufshcd_eh_device_reset_handler(struct scsi_cmnd *cmd)
 
 	/* clear the commands that were pending for corresponding LUN */
 	for_each_set_bit(pos, &hba->outstanding_reqs, hba->nutrs) {
-		if (hba->lrb[pos].lun == lun) {
+		if (hba->lrb[pos].lun == lrbp->lun) {
 			err = ufshcd_clear_cmd(hba, pos);
 			if (err)
 				break;
@@ -5108,15 +5094,12 @@ static int ufshcd_config_vreg(struct device *dev,
 	name = vreg->name;
 
 	if (regulator_count_voltages(reg) > 0) {
-		if (vreg->min_uV && vreg->max_uV) {
-			min_uV = on ? vreg->min_uV : 0;
-			ret = regulator_set_voltage(reg, min_uV, vreg->max_uV);
-			if (ret) {
-				dev_err(dev,
-					"%s: %s set voltage failed, err=%d\n",
+		min_uV = on ? vreg->min_uV : 0;
+		ret = regulator_set_voltage(reg, min_uV, vreg->max_uV);
+		if (ret) {
+			dev_err(dev, "%s: %s set voltage failed, err=%d\n",
 					__func__, name, ret);
-				goto out;
-			}
+			goto out;
 		}
 
 		uA_load = on ? vreg->max_uA : 0;
@@ -5954,15 +5937,11 @@ static int ufshcd_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 			goto set_old_link_state;
 	}
 
-	if (ufshcd_keep_autobkops_enabled_except_suspend(hba))
-		ufshcd_enable_auto_bkops(hba);
-	else
-		/*
-		 * If BKOPs operations are urgently needed at this moment then
-		 * keep auto-bkops enabled or else disable it.
-		 */
-		ufshcd_urgent_bkops(hba);
-
+	/*
+	 * If BKOPs operations are urgently needed at this moment then
+	 * keep auto-bkops enabled or else disable it.
+	 */
+	ufshcd_urgent_bkops(hba);
 	hba->clk_gating.is_suspended = false;
 
 #if defined(CONFIG_PM_DEVFREQ)
@@ -6135,13 +6114,14 @@ int ufshcd_shutdown(struct ufs_hba *hba)
 {
 	int ret = 0;
 
-	if (!hba->is_powered)
-		goto out;
-
 	if (ufshcd_is_ufs_dev_poweroff(hba) && ufshcd_is_link_off(hba))
 		goto out;
 
-	pm_runtime_get_sync(hba->dev);
+	if (pm_runtime_suspended(hba->dev)) {
+		ret = ufshcd_runtime_resume(hba);
+		if (ret)
+			goto out;
+	}
 
 	ret = ufshcd_suspend(hba, UFS_SHUTDOWN_PM);
 out:
@@ -6167,10 +6147,9 @@ latency_hist_store(struct device *dev, struct device_attribute *attr,
 
 	if (kstrtol(buf, 0, &value))
 		return -EINVAL;
-	if (value == BLK_IO_LAT_HIST_ZERO) {
-		memset(&hba->io_lat_read, 0, sizeof(hba->io_lat_read));
-		memset(&hba->io_lat_write, 0, sizeof(hba->io_lat_write));
-	} else if (value == BLK_IO_LAT_HIST_ENABLE ||
+	if (value == BLK_IO_LAT_HIST_ZERO)
+		blk_zero_latency_hist(&hba->io_lat_s);
+	else if (value == BLK_IO_LAT_HIST_ENABLE ||
 		 value == BLK_IO_LAT_HIST_DISABLE)
 		hba->latency_hist_enabled = value;
 	return count;
@@ -6181,14 +6160,8 @@ latency_hist_show(struct device *dev, struct device_attribute *attr,
 		  char *buf)
 {
 	struct ufs_hba *hba = dev_get_drvdata(dev);
-	size_t written_bytes;
 
-	written_bytes = blk_latency_hist_show("Read", &hba->io_lat_read,
-			buf, PAGE_SIZE);
-	written_bytes += blk_latency_hist_show("Write", &hba->io_lat_write,
-			buf + written_bytes, PAGE_SIZE - written_bytes);
-
-	return written_bytes;
+	return blk_latency_hist_show(&hba->io_lat_s, buf);
 }
 
 static DEVICE_ATTR(latency_hist, S_IRUGO | S_IWUSR,

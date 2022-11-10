@@ -437,7 +437,6 @@ static void qlt_free_session_done(struct work_struct *work)
 
 	if (logout_started) {
 		bool traced = false;
-		u16 cnt = 0;
 
 		while (!ACCESS_ONCE(sess->logout_completed)) {
 			if (!traced) {
@@ -447,9 +446,6 @@ static void qlt_free_session_done(struct work_struct *work)
 				traced = true;
 			}
 			msleep(100);
-			cnt++;
-			if (cnt > 200)
-				break;
 		}
 
 		ql_dbg(ql_dbg_tgt_mgt, vha, 0xf087,
@@ -1042,7 +1038,6 @@ void qlt_stop_phase2(struct qla_tgt *tgt)
 	    "Waiting for %d IRQ commands to complete (tgt %p)",
 	    tgt->irq_cmd_count, tgt);
 
-	mutex_lock(&tgt->ha->optrom_mutex);
 	mutex_lock(&vha->vha_tgt.tgt_mutex);
 	spin_lock_irqsave(&ha->hardware_lock, flags);
 	while (tgt->irq_cmd_count != 0) {
@@ -1054,7 +1049,6 @@ void qlt_stop_phase2(struct qla_tgt *tgt)
 	tgt->tgt_stopped = 1;
 	spin_unlock_irqrestore(&ha->hardware_lock, flags);
 	mutex_unlock(&vha->vha_tgt.tgt_mutex);
-	mutex_unlock(&tgt->ha->optrom_mutex);
 
 	ql_dbg(ql_dbg_tgt_mgt, vha, 0xf00c, "Stop of tgt %p finished",
 	    tgt);
@@ -1586,7 +1580,7 @@ void qlt_xmit_tm_rsp(struct qla_tgt_mgmt_cmd *mcmd)
 		qlt_send_notify_ack(vha, &mcmd->orig_iocb.imm_ntfy,
 		    0, 0, 0, 0, 0, 0);
 	else {
-		if (mcmd->orig_iocb.atio.u.raw.entry_type == ABTS_RECV_24XX)
+		if (mcmd->se_cmd.se_tmr_req->function == TMR_ABORT_TASK)
 			qlt_24xx_send_abts_resp(vha, &mcmd->orig_iocb.abts,
 			    mcmd->fc_tm_rsp, false);
 		else
@@ -2874,7 +2868,7 @@ static int __qlt_send_term_imm_notif(struct scsi_qla_host *vha,
 
 	pkt->entry_type = NOTIFY_ACK_TYPE;
 	pkt->entry_count = 1;
-	pkt->handle = QLA_TGT_SKIP_HANDLE;
+	pkt->handle = QLA_TGT_SKIP_HANDLE | CTIO_COMPLETION_HANDLE_MARK;
 
 	nack = (struct nack_to_isp *)pkt;
 	nack->ox_id = ntfy->ox_id;
@@ -5513,7 +5507,7 @@ static fc_port_t *qlt_get_port_database(struct scsi_qla_host *vha,
 	fc_port_t *fcport;
 	int rc;
 
-	fcport = qla2x00_alloc_fcport(vha, GFP_KERNEL);
+	fcport = kzalloc(sizeof(*fcport), GFP_KERNEL);
 	if (!fcport) {
 		ql_dbg(ql_dbg_tgt_mgt, vha, 0xf06f,
 		    "qla_target(%d): Allocation of tmp FC port failed",
@@ -6034,8 +6028,7 @@ qlt_enable_vha(struct scsi_qla_host *vha)
 	} else {
 		set_bit(ISP_ABORT_NEEDED, &base_vha->dpc_flags);
 		qla2xxx_wake_dpc(base_vha);
-		WARN_ON_ONCE(qla2x00_wait_for_hba_online(base_vha) !=
-			     QLA_SUCCESS);
+		qla2x00_wait_for_hba_online(base_vha);
 	}
 }
 EXPORT_SYMBOL(qlt_enable_vha);
@@ -6065,9 +6058,7 @@ static void qlt_disable_vha(struct scsi_qla_host *vha)
 
 	set_bit(ISP_ABORT_NEEDED, &vha->dpc_flags);
 	qla2xxx_wake_dpc(vha);
-	if (qla2x00_wait_for_hba_online(vha) != QLA_SUCCESS)
-		ql_dbg(ql_dbg_tgt, vha, 0xe081,
-		       "qla2x00_wait_for_hba_online() failed\n");
+	qla2x00_wait_for_hba_online(vha);
 }
 
 /*

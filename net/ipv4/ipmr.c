@@ -66,7 +66,6 @@
 #include <net/netlink.h>
 #include <net/fib_rules.h>
 #include <linux/netconf.h>
-#include <linux/nospec.h>
 
 #if defined(CONFIG_IP_PIMSM_V1) || defined(CONFIG_IP_PIMSM_V2)
 #define CONFIG_IP_PIMSM	1
@@ -884,10 +883,8 @@ static struct mfc_cache *ipmr_cache_alloc(void)
 {
 	struct mfc_cache *c = kmem_cache_zalloc(mrt_cachep, GFP_KERNEL);
 
-	if (c) {
-		c->mfc_un.res.last_assert = jiffies - MFC_ASSERT_THRESH - 1;
+	if (c)
 		c->mfc_un.res.minvif = MAXVIFS;
-	}
 	return c;
 }
 
@@ -1576,7 +1573,6 @@ int ipmr_compat_ioctl(struct sock *sk, unsigned int cmd, void __user *arg)
 			return -EFAULT;
 		if (vr.vifi >= mrt->maxvif)
 			return -EINVAL;
-		vr.vifi = array_index_nospec(vr.vifi, mrt->maxvif);
 		read_lock(&mrt_lock);
 		vif = &mrt->vif_table[vr.vifi];
 		if (VIF_EXISTS(mrt, vr.vifi)) {
@@ -1649,8 +1645,7 @@ static struct notifier_block ip_mr_notifier = {
  *	important for multicast video.
  */
 
-static void ip_encap(struct net *net, struct sk_buff *skb,
-		     __be32 saddr, __be32 daddr)
+static void ip_encap(struct sk_buff *skb, __be32 saddr, __be32 daddr)
 {
 	struct iphdr *iph;
 	const struct iphdr *old_iph = ip_hdr(skb);
@@ -1669,7 +1664,7 @@ static void ip_encap(struct net *net, struct sk_buff *skb,
 	iph->protocol	=	IPPROTO_IPIP;
 	iph->ihl	=	5;
 	iph->tot_len	=	htons(skb->len);
-	ip_select_ident(net, skb, NULL);
+	ip_select_ident(skb, NULL);
 	ip_send_check(iph);
 
 	memset(&(IPCB(skb)->opt), 0, sizeof(IPCB(skb)->opt));
@@ -1766,7 +1761,7 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 	 * What do we do with netfilter? -- RR
 	 */
 	if (vif->flags & VIFF_TUNNEL) {
-		ip_encap(net, skb, vif->local, vif->remote);
+		ip_encap(skb, vif->local, vif->remote);
 		/* FIXME: extra output firewall step used to be here. --RR */
 		vif->dev->stats.tx_packets++;
 		vif->dev->stats.tx_bytes += skb->len;

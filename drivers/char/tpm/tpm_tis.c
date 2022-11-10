@@ -235,8 +235,7 @@ static int recv_data(struct tpm_chip *chip, u8 *buf, size_t count)
 static int tpm_tis_recv(struct tpm_chip *chip, u8 *buf, size_t count)
 {
 	int size = 0;
-	int status;
-	u32 expected;
+	int expected, status;
 
 	if (count < TPM_HEADER_SIZE) {
 		size = -EIO;
@@ -251,7 +250,7 @@ static int tpm_tis_recv(struct tpm_chip *chip, u8 *buf, size_t count)
 	}
 
 	expected = be32_to_cpu(*(__be32 *) (buf + 2));
-	if (expected > count || expected < TPM_HEADER_SIZE) {
+	if (expected > count) {
 		size = -EIO;
 		goto out;
 	}

@@ -25,7 +25,6 @@
 #include <linux/interrupt.h>
 #include <linux/pci.h>
 #include <linux/module.h>
-#include <linux/nospec.h>
 
 #include <sound/core.h>
 #include <sound/control.h>
@@ -1784,8 +1783,7 @@ static int snd_rme9652_free(struct snd_rme9652 *rme9652)
 	if (rme9652->port)
 		pci_release_regions(rme9652->pci);
 
-	if (pci_is_enabled(rme9652->pci))
-		pci_disable_device(rme9652->pci);
+	pci_disable_device(rme9652->pci);
 	return 0;
 }
 
@@ -2061,10 +2059,9 @@ static int snd_rme9652_channel_info(struct snd_pcm_substream *substream,
 	if (snd_BUG_ON(info->channel >= RME9652_NCHANNELS))
 		return -EINVAL;
 
-	chn = rme9652->channel_map[array_index_nospec(info->channel,
-						      RME9652_NCHANNELS)];
-	if (chn < 0)
+	if ((chn = rme9652->channel_map[info->channel]) < 0) {
 		return -EINVAL;
+	}
 
 	info->offset = chn * RME9652_CHANNEL_BUFFER_BYTES;
 	info->first = 0;

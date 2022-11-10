@@ -104,11 +104,8 @@ __be32		nfsd_permission(struct svc_rqst *, struct svc_export *,
 
 static inline int fh_want_write(struct svc_fh *fh)
 {
-	int ret;
+	int ret = mnt_want_write(fh->fh_export->ex_path.mnt);
 
-	if (fh->fh_want_write)
-		return 0;
-	ret = mnt_want_write(fh->fh_export->ex_path.mnt);
 	if (!ret)
 		fh->fh_want_write = 1;
 	return ret;

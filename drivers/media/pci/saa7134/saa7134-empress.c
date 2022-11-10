@@ -295,11 +295,8 @@ static int empress_init(struct saa7134_dev *dev)
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
 	q->lock = &dev->lock;
 	err = vb2_queue_init(q);
-	if (err) {
-		video_device_release(dev->empress_dev);
-		dev->empress_dev = NULL;
+	if (err)
 		return err;
-	}
 	dev->empress_dev->queue = q;
 
 	video_set_drvdata(dev->empress_dev, dev);

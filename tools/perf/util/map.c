@@ -1,5 +1,4 @@
 #include "symbol.h"
-#include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -680,8 +679,6 @@ int map_groups__fixup_overlappings(struct map_groups *mg, struct map *map,
 			}
 
 			after->start = map->end;
-			after->pgoff += map->end - pos->start;
-			assert(pos->map_ip(pos, map->end) == after->map_ip(after, map->end));
 			map_groups__insert(mg, after);
 			if (verbose >= 2)
 				map__fprintf(after, fp);

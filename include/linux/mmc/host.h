@@ -408,8 +408,7 @@ struct mmc_host {
 
 #ifdef CONFIG_BLOCK
 	int			latency_hist_enabled;
-	struct io_latency_state io_lat_read;
-	struct io_latency_state io_lat_write;
+	struct io_latency_state io_lat_s;
 #endif
 	int			pm_progress;	/* pm_notify is in progress */
 

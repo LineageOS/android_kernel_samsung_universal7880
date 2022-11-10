@@ -53,7 +53,6 @@
 #include <asm/uaccess.h>
 #include <linux/hashtable.h>
 
-#include "auth_gss_internal.h"
 #include "../netns.h"
 
 static const struct rpc_authops authgss_ops;
@@ -146,6 +145,35 @@ gss_cred_set_ctx(struct rpc_cred *cred, struct gss_cl_ctx *ctx)
 	set_bit(RPCAUTH_CRED_UPTODATE, &cred->cr_flags);
 	smp_mb__before_atomic();
 	clear_bit(RPCAUTH_CRED_NEW, &cred->cr_flags);
+}
+
+static const void *
+simple_get_bytes(const void *p, const void *end, void *res, size_t len)
+{
+	const void *q = (const void *)((const char *)p + len);
+	if (unlikely(q > end || q < p))
+		return ERR_PTR(-EFAULT);
+	memcpy(res, p, len);
+	return q;
+}
+
+static inline const void *
+simple_get_netobj(const void *p, const void *end, struct xdr_netobj *dest)
+{
+	const void *q;
+	unsigned int len;
+
+	p = simple_get_bytes(p, end, &len, sizeof(len));
+	if (IS_ERR(p))
+		return p;
+	q = (const void *)((const char *)p + len);
+	if (unlikely(q > end || q < p))
+		return ERR_PTR(-EFAULT);
+	dest->data = kmemdup(p, len, GFP_NOFS);
+	if (unlikely(dest->data == NULL))
+		return ERR_PTR(-ENOMEM);
+	dest->len = len;
+	return q;
 }
 
 static struct gss_cl_ctx *
@@ -312,13 +340,11 @@ gss_release_msg(struct gss_upcall_msg *gss_msg)
 }
 
 static struct gss_upcall_msg *
-__gss_find_upcall(struct rpc_pipe *pipe, kuid_t uid, const struct gss_auth *auth)
+__gss_find_upcall(struct rpc_pipe *pipe, kuid_t uid)
 {
 	struct gss_upcall_msg *pos;
 	list_for_each_entry(pos, &pipe->in_downcall, list) {
 		if (!uid_eq(pos->uid, uid))
-			continue;
-		if (auth && pos->auth->service != auth->service)
 			continue;
 		atomic_inc(&pos->count);
 		dprintk("RPC:       %s found msg %p\n", __func__, pos);
@@ -339,7 +365,7 @@ gss_add_msg(struct gss_upcall_msg *gss_msg)
 	struct gss_upcall_msg *old;
 
 	spin_lock(&pipe->lock);
-	old = __gss_find_upcall(pipe, gss_msg->uid, gss_msg->auth);
+	old = __gss_find_upcall(pipe, gss_msg->uid);
 	if (old == NULL) {
 		atomic_inc(&gss_msg->count);
 		list_add(&gss_msg->list, &pipe->in_downcall);
@@ -692,7 +718,7 @@ gss_pipe_downcall(struct file *filp, const char __user *src, size_t mlen)
 	err = -ENOENT;
 	/* Find a matching upcall */
 	spin_lock(&pipe->lock);
-	gss_msg = __gss_find_upcall(pipe, uid, NULL);
+	gss_msg = __gss_find_upcall(pipe, uid);
 	if (gss_msg == NULL) {
 		spin_unlock(&pipe->lock);
 		goto err_put_ctx;

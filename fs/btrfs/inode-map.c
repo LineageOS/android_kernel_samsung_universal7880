@@ -158,7 +158,6 @@ static void start_caching(struct btrfs_root *root)
 		spin_lock(&root->ino_cache_lock);
 		root->ino_cache_state = BTRFS_CACHE_FINISHED;
 		spin_unlock(&root->ino_cache_lock);
-		wake_up(&root->ino_cache_wait);
 		return;
 	}
 
@@ -507,7 +506,7 @@ out:
 	return ret;
 }
 
-int btrfs_find_highest_objectid(struct btrfs_root *root, u64 *objectid)
+static int btrfs_find_highest_objectid(struct btrfs_root *root, u64 *objectid)
 {
 	struct btrfs_path *path;
 	int ret;
@@ -546,6 +545,13 @@ int btrfs_find_free_objectid(struct btrfs_root *root, u64 *objectid)
 {
 	int ret;
 	mutex_lock(&root->objectid_mutex);
+
+	if (unlikely(root->highest_objectid < BTRFS_FIRST_FREE_OBJECTID)) {
+		ret = btrfs_find_highest_objectid(root,
+						  &root->highest_objectid);
+		if (ret)
+			goto out;
+	}
 
 	if (unlikely(root->highest_objectid >= BTRFS_LAST_FREE_OBJECTID)) {
 		ret = -ENOSPC;

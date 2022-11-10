@@ -2151,7 +2151,7 @@ s32 ixgbe_fc_enable_generic(struct ixgbe_hw *hw)
 	}
 
 	/* Configure pause time (2 TCs per register) */
-	reg = hw->fc.pause_time * 0x00010001U;
+	reg = hw->fc.pause_time * 0x00010001;
 	for (i = 0; i < (MAX_TRAFFIC_CLASS / 2); i++)
 		IXGBE_WRITE_REG(hw, IXGBE_FCTTV(i), reg);
 
@@ -2809,8 +2809,6 @@ u16 ixgbe_get_pcie_msix_count_generic(struct ixgbe_hw *hw)
 		break;
 	case ixgbe_mac_82599EB:
 	case ixgbe_mac_X540:
-	case ixgbe_mac_X550:
-	case ixgbe_mac_X550EM_x:
 		pcie_offset = IXGBE_PCIE_MSIX_82599_CAPS;
 		max_msix_count = IXGBE_MAX_MSIX_VECTORS_82599;
 		break;
@@ -3204,27 +3202,17 @@ s32 ixgbe_check_mac_link_generic(struct ixgbe_hw *hw, ixgbe_link_speed *speed,
 			*link_up = false;
 	}
 
-	switch (links_reg & IXGBE_LINKS_SPEED_82599) {
-	case IXGBE_LINKS_SPEED_10G_82599:
-		if ((hw->mac.type >= ixgbe_mac_X550) &&
-		    (links_reg & IXGBE_LINKS_SPEED_NON_STD))
-			*speed = IXGBE_LINK_SPEED_2_5GB_FULL;
-		else
-			*speed = IXGBE_LINK_SPEED_10GB_FULL;
-		break;
-	case IXGBE_LINKS_SPEED_1G_82599:
+	if ((links_reg & IXGBE_LINKS_SPEED_82599) ==
+	    IXGBE_LINKS_SPEED_10G_82599)
+		*speed = IXGBE_LINK_SPEED_10GB_FULL;
+	else if ((links_reg & IXGBE_LINKS_SPEED_82599) ==
+		 IXGBE_LINKS_SPEED_1G_82599)
 		*speed = IXGBE_LINK_SPEED_1GB_FULL;
-		break;
-	case IXGBE_LINKS_SPEED_100_82599:
-		if ((hw->mac.type >= ixgbe_mac_X550) &&
-		    (links_reg & IXGBE_LINKS_SPEED_NON_STD))
-			*speed = IXGBE_LINK_SPEED_5GB_FULL;
-		else
-			*speed = IXGBE_LINK_SPEED_100_FULL;
-		break;
-	default:
+	else if ((links_reg & IXGBE_LINKS_SPEED_82599) ==
+		 IXGBE_LINKS_SPEED_100_82599)
+		*speed = IXGBE_LINK_SPEED_100_FULL;
+	else
 		*speed = IXGBE_LINK_SPEED_UNKNOWN;
-	}
 
 	return 0;
 }

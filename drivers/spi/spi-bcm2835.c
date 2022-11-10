@@ -305,7 +305,7 @@ static int bcm2835_spi_probe(struct platform_device *pdev)
 	struct resource *res;
 	int err;
 
-	master = devm_spi_alloc_master(&pdev->dev, sizeof(*bs));
+	master = spi_alloc_master(&pdev->dev, sizeof(*bs));
 	if (!master) {
 		dev_err(&pdev->dev, "spi_alloc_master() failed\n");
 		return -ENOMEM;
@@ -325,20 +325,23 @@ static int bcm2835_spi_probe(struct platform_device *pdev)
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	bs->regs = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(bs->regs))
-		return PTR_ERR(bs->regs);
+	if (IS_ERR(bs->regs)) {
+		err = PTR_ERR(bs->regs);
+		goto out_master_put;
+	}
 
 	bs->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(bs->clk)) {
 		err = PTR_ERR(bs->clk);
 		dev_err(&pdev->dev, "could not get clk: %d\n", err);
-		return err;
+		goto out_master_put;
 	}
 
 	bs->irq = irq_of_parse_and_map(pdev->dev.of_node, 0);
 	if (bs->irq <= 0) {
 		dev_err(&pdev->dev, "could not get IRQ: %d\n", bs->irq);
-		return bs->irq ? bs->irq : -ENODEV;
+		err = bs->irq ? bs->irq : -ENODEV;
+		goto out_master_put;
 	}
 
 	clk_prepare_enable(bs->clk);
@@ -354,7 +357,7 @@ static int bcm2835_spi_probe(struct platform_device *pdev)
 	bcm2835_wr(bs, BCM2835_SPI_CS,
 		   BCM2835_SPI_CS_CLEAR_RX | BCM2835_SPI_CS_CLEAR_TX);
 
-	err = spi_register_master(master);
+	err = devm_spi_register_master(&pdev->dev, master);
 	if (err) {
 		dev_err(&pdev->dev, "could not register SPI master: %d\n", err);
 		goto out_clk_disable;
@@ -364,6 +367,8 @@ static int bcm2835_spi_probe(struct platform_device *pdev)
 
 out_clk_disable:
 	clk_disable_unprepare(bs->clk);
+out_master_put:
+	spi_master_put(master);
 	return err;
 }
 
@@ -371,8 +376,6 @@ static int bcm2835_spi_remove(struct platform_device *pdev)
 {
 	struct spi_master *master = platform_get_drvdata(pdev);
 	struct bcm2835_spi *bs = spi_master_get_devdata(master);
-
-	spi_unregister_master(master);
 
 	/* Clear FIFOs, and disable the HW block */
 	bcm2835_wr(bs, BCM2835_SPI_CS,

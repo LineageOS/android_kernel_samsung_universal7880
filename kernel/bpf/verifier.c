@@ -643,20 +643,13 @@ static int check_ctx_access(struct verifier_env *env, int off, int size,
 	return -EACCES;
 }
 
-static bool is_ctx_reg(struct verifier_env *env, int regno)
-{
-	const struct reg_state *reg = &env->cur_state.regs[regno];
-
-	return reg->type == PTR_TO_CTX;
-}
-
 /* check whether memory at (regno + off) is accessible for t = (read | write)
  * if t==write, value_regno is a register which value is stored into memory
  * if t==read, value_regno is a register which will receive the value from memory
  * if t==write && value_regno==-1, some unknown value is stored into memory
  * if t==read && value_regno==-1, don't care what we read from memory
  */
-static int check_mem_access(struct verifier_env *env, int insn_idx, u32 regno, int off,
+static int check_mem_access(struct verifier_env *env, u32 regno, int off,
 			    int bpf_size, enum bpf_access_type t,
 			    int value_regno)
 {
@@ -699,7 +692,7 @@ static int check_mem_access(struct verifier_env *env, int insn_idx, u32 regno, i
 	return err;
 }
 
-static int check_xadd(struct verifier_env *env, int insn_idx, struct bpf_insn *insn)
+static int check_xadd(struct verifier_env *env, struct bpf_insn *insn)
 {
 	struct reg_state *regs = env->cur_state.regs;
 	int err;
@@ -720,20 +713,14 @@ static int check_xadd(struct verifier_env *env, int insn_idx, struct bpf_insn *i
 	if (err)
 		return err;
 
-	if (is_ctx_reg(env, insn->dst_reg)) {
-		verbose("BPF_XADD stores into R%d context is not allowed\n",
-			insn->dst_reg);
-		return -EACCES;
-	}
-
 	/* check whether atomic_add can read the memory */
-	err = check_mem_access(env, insn_idx, insn->dst_reg, insn->off,
+	err = check_mem_access(env, insn->dst_reg, insn->off,
 			       BPF_SIZE(insn->code), BPF_READ, -1);
 	if (err)
 		return err;
 
 	/* check whether atomic_add can write into the same memory */
-	return check_mem_access(env, insn_idx, insn->dst_reg, insn->off,
+	return check_mem_access(env, insn->dst_reg, insn->off,
 				BPF_SIZE(insn->code), BPF_WRITE, -1);
 }
 
@@ -996,8 +983,7 @@ static int check_alu_op(struct reg_state *regs, struct bpf_insn *insn)
 				regs[insn->dst_reg].type = UNKNOWN_VALUE;
 				regs[insn->dst_reg].map_ptr = NULL;
 			}
-		} else if (BPF_CLASS(insn->code) == BPF_ALU64 ||
-			   insn->imm >= 0) {
+		} else {
 			/* case: R = imm
 			 * remember the value we stored into this reg
 			 */
@@ -1037,11 +1023,6 @@ static int check_alu_op(struct reg_state *regs, struct bpf_insn *insn)
 		if ((opcode == BPF_MOD || opcode == BPF_DIV) &&
 		    BPF_SRC(insn->code) == BPF_K && insn->imm == 0) {
 			verbose("div by zero\n");
-			return -EINVAL;
-		}
-
-		if (opcode == BPF_ARSH && BPF_CLASS(insn->code) != BPF_ALU64) {
-			verbose("BPF_ARSH not supported for 32 bit ALU\n");
 			return -EINVAL;
 		}
 
@@ -1580,7 +1561,7 @@ static int do_check(struct verifier_env *env)
 			/* check that memory (src_reg + off) is readable,
 			 * the state of dst_reg will be updated by this func
 			 */
-			err = check_mem_access(env, insn_idx, insn->src_reg, insn->off,
+			err = check_mem_access(env, insn->src_reg, insn->off,
 					       BPF_SIZE(insn->code), BPF_READ,
 					       insn->dst_reg);
 			if (err)
@@ -1588,7 +1569,7 @@ static int do_check(struct verifier_env *env)
 
 		} else if (class == BPF_STX) {
 			if (BPF_MODE(insn->code) == BPF_XADD) {
-				err = check_xadd(env, insn_idx, insn);
+				err = check_xadd(env, insn);
 				if (err)
 					return err;
 				insn_idx++;
@@ -1610,7 +1591,7 @@ static int do_check(struct verifier_env *env)
 				return err;
 
 			/* check that memory (dst_reg + off) is writeable */
-			err = check_mem_access(env, insn_idx, insn->dst_reg, insn->off,
+			err = check_mem_access(env, insn->dst_reg, insn->off,
 					       BPF_SIZE(insn->code), BPF_WRITE,
 					       insn->src_reg);
 			if (err)
@@ -1627,14 +1608,8 @@ static int do_check(struct verifier_env *env)
 			if (err)
 				return err;
 
-			if (is_ctx_reg(env, insn->dst_reg)) {
-				verbose("BPF_ST stores into R%d context is not allowed\n",
-					insn->dst_reg);
-				return -EACCES;
-			}
-
 			/* check that memory (dst_reg + off) is writeable */
-			err = check_mem_access(env, insn_idx, insn->dst_reg, insn->off,
+			err = check_mem_access(env, insn->dst_reg, insn->off,
 					       BPF_SIZE(insn->code), BPF_WRITE,
 					       -1);
 			if (err)

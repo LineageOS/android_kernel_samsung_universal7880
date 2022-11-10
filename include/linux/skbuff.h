@@ -29,7 +29,6 @@
 #include <linux/time.h>
 #include <linux/bug.h>
 #include <linux/cache.h>
-#include <linux/rbtree.h>
 
 #include <linux/atomic.h>
 #include <asm/types.h>
@@ -42,7 +41,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/netdev_features.h>
 #include <linux/sched.h>
-#include <net/flow_dissector.h>
+#include <net/flow_keys.h>
 
 /* A. Checksumming of received packets by device.
  *
@@ -458,7 +457,6 @@ static inline u32 skb_mstamp_us_delta(const struct skb_mstamp *t1,
  *	@next: Next buffer in list
  *	@prev: Previous buffer in list
  *	@tstamp: Time we arrived/left
- *	@rbnode: RB tree node, alternative to next/prev for netem/tcp
  *	@sk: Socket we are owned by
  *	@dev: Device we arrived on/are leaving by
  *	@cb: Control buffer. Free for use by every layer. Put private vars here
@@ -524,22 +522,13 @@ static inline u32 skb_mstamp_us_delta(const struct skb_mstamp *t1,
  */
 
 struct sk_buff {
-	union {
-		struct {
-			/* These two members must be first. */
-			struct sk_buff		*next;
-			struct sk_buff		*prev;
-
-			union {
-				ktime_t		tstamp;
-				struct skb_mstamp skb_mstamp;
-			};
-		};
-		struct rb_node	rbnode; /* used in netem & tcp stack */
-	};
+	/* These two members must be first. */
+	struct sk_buff		*next;
+	struct sk_buff		*prev;
 
 	union {
-		int			ip_defrag_offset;
+		ktime_t		tstamp;
+		struct skb_mstamp skb_mstamp;
 	};
 
 	struct sock		*sk;
@@ -955,9 +944,6 @@ static inline __u32 skb_get_hash(struct sk_buff *skb)
 	return skb->hash;
 }
 
-__u32 skb_get_hash_perturb(const struct sk_buff *skb,
-			   const siphash_key_t *perturb);
-
 static inline __u32 skb_get_hash_raw(const struct sk_buff *skb)
 {
 	return skb->hash;
@@ -1330,18 +1316,6 @@ static inline __u32 skb_queue_len(const struct sk_buff_head *list_)
 }
 
 /**
- *	skb_queue_len_lockless	- get queue length
- *	@list_: list to measure
- *
- *	Return the length of an &sk_buff queue.
- *	This variant can be used in lockless contexts.
- */
-static inline __u32 skb_queue_len_lockless(const struct sk_buff_head *list_)
-{
-	return READ_ONCE(list_->qlen);
-}
-
-/**
  *	__skb_queue_head_init - initialize non-spinlock portions of sk_buff_head
  *	@list: queue to initialize
  *
@@ -1544,7 +1518,7 @@ static inline void __skb_unlink(struct sk_buff *skb, struct sk_buff_head *list)
 {
 	struct sk_buff *next, *prev;
 
-	WRITE_ONCE(list->qlen, list->qlen - 1);
+	list->qlen--;
 	next	   = skb->next;
 	prev	   = skb->prev;
 	skb->next  = skb->prev = NULL;
@@ -1819,30 +1793,6 @@ static inline void skb_reserve(struct sk_buff *skb, int len)
 	skb->tail += len;
 }
 
-/**
- *	skb_tailroom_reserve - adjust reserved_tailroom
- *	@skb: buffer to alter
- *	@mtu: maximum amount of headlen permitted
- *	@needed_tailroom: minimum amount of reserved_tailroom
- *
- *	Set reserved_tailroom so that headlen can be as large as possible but
- *	not larger than mtu and tailroom cannot be smaller than
- *	needed_tailroom.
- *	The required headroom should already have been reserved before using
- *	this function.
- */
-static inline void skb_tailroom_reserve(struct sk_buff *skb, unsigned int mtu,
-					unsigned int needed_tailroom)
-{
-	SKB_LINEAR_ASSERT(skb);
-	if (mtu < skb_tailroom(skb) - needed_tailroom)
-		/* use at most mtu */
-		skb->reserved_tailroom = skb_tailroom(skb) - mtu;
-	else
-		/* use up to all available space */
-		skb->reserved_tailroom = needed_tailroom;
-}
-
 #define ENCAP_TYPE_ETHER	0
 #define ENCAP_TYPE_IPPROTO	1
 
@@ -1994,8 +1944,8 @@ static inline void skb_probe_transport_header(struct sk_buff *skb,
 
 	if (skb_transport_header_was_set(skb))
 		return;
-	else if (skb_flow_dissect_flow_keys(skb, &keys))
-		skb_set_transport_header(skb, keys.control.thoff);
+	else if (skb_flow_dissect(skb, &keys))
+		skb_set_transport_header(skb, keys.thoff);
 	else
 		skb_set_transport_header(skb, offset_hint);
 }
@@ -2189,8 +2139,6 @@ static inline void __skb_queue_purge(struct sk_buff_head *list)
 #define NETDEV_FRAG_PAGE_MAX_ORDER get_order(32768)
 #define NETDEV_FRAG_PAGE_MAX_SIZE  (PAGE_SIZE << NETDEV_FRAG_PAGE_MAX_ORDER)
 #define NETDEV_PAGECNT_MAX_BIAS	   NETDEV_FRAG_PAGE_MAX_SIZE
-
-unsigned int skb_rbtree_purge(struct rb_root *root);
 
 void *netdev_alloc_frag(unsigned int fragsz);
 
@@ -2462,13 +2410,6 @@ static inline int skb_clone_writable(const struct sk_buff *skb, unsigned int len
 	       skb_headroom(skb) + len <= skb->hdr_len;
 }
 
-static inline int skb_try_make_writable(struct sk_buff *skb,
-					unsigned int write_len)
-{
-	return skb_cloned(skb) && !skb_clone_writable(skb, write_len) &&
-	       pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
-}
-
 static inline int __skb_cow(struct sk_buff *skb, unsigned int headroom,
 			    int cloned)
 {
@@ -2632,8 +2573,6 @@ static inline void skb_postpull_rcsum(struct sk_buff *skb,
 
 unsigned char *skb_pull_rcsum(struct sk_buff *skb, unsigned int len);
 
-int pskb_trim_rcsum_slow(struct sk_buff *skb, unsigned int len);
-
 /**
  *	pskb_trim_rcsum - trim received skb and update checksum
  *	@skb: buffer to trim
@@ -2647,14 +2586,10 @@ static inline int pskb_trim_rcsum(struct sk_buff *skb, unsigned int len)
 {
 	if (likely(len >= skb->len))
 		return 0;
-	return pskb_trim_rcsum_slow(skb, len);
+	if (skb->ip_summed == CHECKSUM_COMPLETE)
+		skb->ip_summed = CHECKSUM_NONE;
+	return __pskb_trim(skb, len);
 }
-
-#define rb_to_skb(rb) rb_entry_safe(rb, struct sk_buff, rbnode)
-#define skb_rb_first(root) rb_to_skb(rb_first(root))
-#define skb_rb_last(root)  rb_to_skb(rb_last(root))
-#define skb_rb_next(skb)   rb_to_skb(rb_next(&(skb)->rbnode))
-#define skb_rb_prev(skb)   rb_to_skb(rb_prev(&(skb)->rbnode))
 
 #define skb_queue_walk(queue, skb) \
 		for (skb = (queue)->next;					\
@@ -3320,8 +3255,7 @@ struct skb_gso_cb {
 	int	encap_level;
 	__u16	csum_start;
 };
-#define SKB_SGO_CB_OFFSET	32
-#define SKB_GSO_CB(skb) ((struct skb_gso_cb *)((skb)->cb + SKB_SGO_CB_OFFSET))
+#define SKB_GSO_CB(skb) ((struct skb_gso_cb *)(skb)->cb)
 
 static inline int skb_tnl_header_len(const struct sk_buff *inner_skb)
 {

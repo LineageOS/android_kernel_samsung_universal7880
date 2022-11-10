@@ -635,8 +635,19 @@ static void sci_transmit_chars(struct uart_port *port)
 
 	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
 		uart_write_wakeup(port);
-	if (uart_circ_empty(xmit))
+	if (uart_circ_empty(xmit)) {
 		sci_stop_tx(port);
+	} else {
+		ctrl = serial_port_in(port, SCSCR);
+
+		if (port->type != PORT_SCI) {
+			serial_port_in(port, SCxSR); /* Dummy read */
+			serial_port_out(port, SCxSR, SCxSR_TDxE_CLEAR(port));
+		}
+
+		ctrl |= SCSCR_TIE;
+		serial_port_out(port, SCSCR, ctrl);
+	}
 }
 
 /* On SH3, SCIF may read end-of-break as a space->mark char */
@@ -2303,12 +2314,13 @@ static void serial_console_write(struct console *co, const char *s,
 	unsigned long flags;
 	int locked = 1;
 
+	local_irq_save(flags);
 	if (port->sysrq)
 		locked = 0;
 	else if (oops_in_progress)
-		locked = spin_trylock_irqsave(&port->lock, flags);
+		locked = spin_trylock(&port->lock);
 	else
-		spin_lock_irqsave(&port->lock, flags);
+		spin_lock(&port->lock);
 
 	/* first save the SCSCR then disable the interrupts */
 	ctrl = serial_port_in(port, SCSCR);
@@ -2325,7 +2337,8 @@ static void serial_console_write(struct console *co, const char *s,
 	serial_port_out(port, SCSCR, ctrl);
 
 	if (locked)
-		spin_unlock_irqrestore(&port->lock, flags);
+		spin_unlock(&port->lock);
+	local_irq_restore(flags);
 }
 
 static int serial_console_setup(struct console *co, char *options)

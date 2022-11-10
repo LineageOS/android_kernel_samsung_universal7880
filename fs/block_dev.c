@@ -1117,8 +1117,10 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 	 */
 	if (!for_part) {
 		ret = devcgroup_inode_permission(bdev->bd_inode, perm);
-		if (ret != 0)
+		if (ret != 0) {
+			bdput(bdev);
 			return ret;
+		}
 	}
 
  restart:
@@ -1191,10 +1193,8 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 				goto out_clear;
 			BUG_ON(for_part);
 			ret = __blkdev_get(whole, mode, 1);
-			if (ret) {
-				bdput(whole);
+			if (ret)
 				goto out_clear;
-			}
 			bdev->bd_contains = whole;
 			bdev_inode_switch_bdi(bdev->bd_inode,
 				whole->bd_inode->i_data.backing_dev_info);
@@ -1247,6 +1247,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 	put_disk(disk);
 	module_put(owner);
  out:
+	bdput(bdev);
 
 	return ret;
 }
@@ -1331,9 +1332,6 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 		mutex_unlock(&bdev->bd_mutex);
 		bdput(whole);
 	}
-
-	if (res)
-		bdput(bdev);
 
 	return res;
 }
@@ -1450,16 +1448,6 @@ static void __blkdev_put(struct block_device *bdev, fmode_t mode, int for_part)
 {
 	struct gendisk *disk = bdev->bd_disk;
 	struct block_device *victim = NULL;
-
-	/*
-	 * Sync early if it looks like we're the last one.  If someone else
-	 * opens the block device between now and the decrement of bd_openers
-	 * then we did a sync that we didn't need to, but that's not the end
-	 * of the world and we want to avoid long (could be several minute)
-	 * syncs while holding the mutex.
-	 */
-	if (bdev->bd_openers == 1)
-		sync_blockdev(bdev);
 
 	mutex_lock_nested(&bdev->bd_mutex, for_part);
 	if (for_part)

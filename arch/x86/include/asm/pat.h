@@ -20,7 +20,7 @@ extern int kernel_map_sync_memtype(u64 base, unsigned long size,
 		unsigned long flag);
 
 int io_reserve_memtype(resource_size_t start, resource_size_t end,
-			enum page_cache_mode *pcm);
+			unsigned long *type);
 
 void io_free_memtype(resource_size_t start, resource_size_t end);
 

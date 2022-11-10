@@ -124,20 +124,20 @@ static void ip_cmsg_recv_security(struct msghdr *msg, struct sk_buff *skb)
 
 static void ip_cmsg_recv_dstaddr(struct msghdr *msg, struct sk_buff *skb)
 {
-	__be16 _ports[2], *ports;
 	struct sockaddr_in sin;
+	const struct iphdr *iph = ip_hdr(skb);
+	__be16 *ports = (__be16 *)skb_transport_header(skb);
+
+	if (skb_transport_offset(skb) + 4 > skb->len)
+		return;
 
 	/* All current transport protocols have the port numbers in the
 	 * first four bytes of the transport header and this function is
 	 * written with this assumption in mind.
 	 */
-	ports = skb_header_pointer(skb, skb_transport_offset(skb),
-				   sizeof(_ports), &_ports);
-	if (!ports)
-		return;
 
 	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = ip_hdr(skb)->daddr;
+	sin.sin_addr.s_addr = iph->daddr;
 	sin.sin_port = ports[1];
 	memset(sin.sin_zero, 0, sizeof(sin.sin_zero));
 
@@ -217,8 +217,6 @@ int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc,
 		switch (cmsg->cmsg_type) {
 		case IP_RETOPTS:
 			err = cmsg->cmsg_len - CMSG_ALIGN(sizeof(struct cmsghdr));
-
-			/* Our caller is responsible for freeing ipc->opt */
 			err = ip_options_get(net, &ipc->opt, CMSG_DATA(cmsg),
 					     err < 40 ? err : 40);
 			if (err)
@@ -244,12 +242,9 @@ int ip_cmsg_send(struct net *net, struct msghdr *msg, struct ipcm_cookie *ipc,
 			ipc->ttl = val;
 			break;
 		case IP_TOS:
-			if (cmsg->cmsg_len == CMSG_LEN(sizeof(int)))
-				val = *(int *)CMSG_DATA(cmsg);
-			else if (cmsg->cmsg_len == CMSG_LEN(sizeof(u8)))
-				val = *(u8 *)CMSG_DATA(cmsg);
-			else
+			if (cmsg->cmsg_len != CMSG_LEN(sizeof(int)))
 				return -EINVAL;
+			val = *(int *)CMSG_DATA(cmsg);
 			if (val < 0 || val > 255)
 				return -EINVAL;
 			ipc->tos = val;

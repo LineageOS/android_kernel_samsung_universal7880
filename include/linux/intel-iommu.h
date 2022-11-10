@@ -338,8 +338,6 @@ struct intel_iommu {
 #endif
 	struct device	*iommu_dev; /* IOMMU-sysfs device */
 	int		node;
-
-	struct dmar_drhd_unit *drhd;
 };
 
 static inline void __iommu_flush_cache(

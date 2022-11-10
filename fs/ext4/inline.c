@@ -693,10 +693,6 @@ int ext4_try_to_write_inline_data(struct address_space *mapping,
 		goto convert;
 	}
 
-	ret = ext4_journal_get_write_access(handle, iloc.bh);
-	if (ret)
-		goto out;
-
 	flags |= AOP_FLAG_NOFS;
 
 	page = grab_cache_page_write_begin(mapping, 0, flags);
@@ -728,7 +724,7 @@ int ext4_try_to_write_inline_data(struct address_space *mapping,
 out_up_read:
 	up_read(&EXT4_I(inode)->xattr_sem);
 out:
-	if (handle && (ret != 1))
+	if (handle)
 		ext4_journal_stop(handle);
 	brelse(iloc.bh);
 	return ret;
@@ -770,7 +766,6 @@ int ext4_write_inline_data_end(struct inode *inode, loff_t pos, unsigned len,
 
 	ext4_write_unlock_xattr(inode, &no_expand);
 	brelse(iloc.bh);
-	mark_inode_dirty(inode);
 out:
 	return copied;
 }
@@ -931,9 +926,6 @@ retry_journal:
 		if (ret < 0)
 			goto out_release_page;
 	}
-	ret = ext4_journal_get_write_access(handle, iloc.bh);
-	if (ret)
-		goto out_release_page;
 
 	up_read(&EXT4_I(inode)->xattr_sem);
 	*pagep = page;
@@ -954,6 +946,8 @@ int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
 				  unsigned len, unsigned copied,
 				  struct page *page)
 {
+	int i_size_changed = 0;
+
 	copied = ext4_write_inline_data_end(inode, pos, len, copied, page);
 
 	/*
@@ -963,8 +957,10 @@ int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
 	 * But it's important to update i_size while still holding page lock:
 	 * page writeout could otherwise come in and zero beyond i_size.
 	 */
-	if (pos+copied > inode->i_size)
+	if (pos+copied > inode->i_size) {
 		i_size_write(inode, pos+copied);
+		i_size_changed = 1;
+	}
 	unlock_page(page);
 	page_cache_release(page);
 
@@ -974,7 +970,8 @@ int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
 	 * ordering of page lock and transaction start for journaling
 	 * filesystems.
 	 */
-	mark_inode_dirty(inode);
+	if (i_size_changed)
+		mark_inode_dirty(inode);
 
 	return copied;
 }
@@ -1422,7 +1419,7 @@ int htree_inlinedir_to_tree(struct file *dir_file,
 		err = ext4_htree_store_dirent(dir_file, hinfo->hash,
 					      hinfo->minor_hash, de, &tmp_str);
 		if (err) {
-			ret = err;
+			count = err;
 			goto out;
 		}
 		count++;
@@ -1858,12 +1855,12 @@ int ext4_inline_data_fiemap(struct inode *inode,
 	physical += offsetof(struct ext4_inode, i_block);
 	length = i_size_read(inode);
 
-	brelse(iloc.bh);
-out:
-	up_read(&EXT4_I(inode)->xattr_sem);
 	if (physical)
 		error = fiemap_fill_next_extent(fieinfo, 0, physical,
 						length, flags);
+	brelse(iloc.bh);
+out:
+	up_read(&EXT4_I(inode)->xattr_sem);
 	return (error < 0 ? error : 0);
 }
 
@@ -1889,7 +1886,6 @@ void ext4_inline_data_truncate(struct inode *inode, int *has_inline)
 
 	ext4_write_lock_xattr(inode, &no_expand);
 	if (!ext4_has_inline_data(inode)) {
-		ext4_write_unlock_xattr(inode, &no_expand);
 		*has_inline = 0;
 		ext4_journal_stop(handle);
 		return;

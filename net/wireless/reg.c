@@ -1953,7 +1953,7 @@ static void reg_process_pending_hints(void)
 
 	/* When last_request->processed becomes true this will be rescheduled */
 	if (lr && !lr->processed) {
-		pr_debug("Pending regulatory request, waiting for it to be processed...\n");
+		reg_process_hint(lr);
 		return;
 	}
 
@@ -2047,9 +2047,6 @@ int regulatory_hint_user(const char *alpha2,
 	struct regulatory_request *request;
 
 	if (WARN_ON(!alpha2))
-		return -EINVAL;
-
-	if (!is_world_regdom(alpha2) && !is_an_alpha2(alpha2))
 		return -EINVAL;
 
 	request = kzalloc(sizeof(struct regulatory_request), GFP_KERNEL);
@@ -2411,7 +2408,7 @@ static void print_rd_rules(const struct ieee80211_regdomain *rd)
 		power_rule = &reg_rule->power_rule;
 
 		if (reg_rule->flags & NL80211_RRF_AUTO_BW)
-			snprintf(bw, sizeof(bw), "%d KHz, %u KHz AUTO",
+			snprintf(bw, sizeof(bw), "%d KHz, %d KHz AUTO",
 				 freq_range->max_bandwidth_khz,
 				 reg_get_max_bandwidth(rd, reg_rule));
 		else

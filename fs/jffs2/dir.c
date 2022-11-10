@@ -587,14 +587,10 @@ static int jffs2_rmdir (struct inode *dir_i, struct dentry *dentry)
 	int ret;
 	uint32_t now = get_seconds();
 
-	mutex_lock(&f->sem);
 	for (fd = f->dents ; fd; fd = fd->next) {
-		if (fd->ino) {
-			mutex_unlock(&f->sem);
+		if (fd->ino)
 			return -ENOTEMPTY;
-		}
 	}
-	mutex_unlock(&f->sem);
 
 	ret = jffs2_do_unlink(c, dir_f, dentry->d_name.name,
 			      dentry->d_name.len, f, now);
@@ -845,14 +841,9 @@ static int jffs2_rename (struct inode *old_dir_i, struct dentry *old_dentry,
 
 		pr_notice("%s(): Link succeeded, unlink failed (err %d). You now have a hard link\n",
 			  __func__, ret);
-		/*
-		 * We can't keep the target in dcache after that.
-		 * For one thing, we can't afford dentry aliases for directories.
-		 * For another, if there was a victim, we _can't_ set new inode
-		 * for that sucker and we have to trigger mount eviction - the
-		 * caller won't do it on its own since we are returning an error.
-		 */
-		d_invalidate(new_dentry);
+		/* Might as well let the VFS know */
+		d_instantiate(new_dentry, old_dentry->d_inode);
+		ihold(old_dentry->d_inode);
 		new_dir_i->i_mtime = new_dir_i->i_ctime = ITIME(now);
 		return ret;
 	}

@@ -104,7 +104,8 @@ int sptlrpc_parse_flavor(const char *str, struct sptlrpc_flavor *flvr)
 		return 0;
 	}
 
-	strlcpy(buf, str, sizeof(buf));
+	strncpy(buf, str, sizeof(buf));
+	buf[sizeof(buf) - 1] = '\0';
 
 	bulk = strchr(buf, '-');
 	if (bulk)

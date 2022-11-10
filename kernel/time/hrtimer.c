@@ -99,9 +99,6 @@ DEFINE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases) =
 };
 
 static const int hrtimer_clock_to_base_table[MAX_CLOCKS] = {
-	/* Make sure we catch unsupported clockids */
-	[0 ... MAX_CLOCKS - 1]	= HRTIMER_MAX_CLOCK_BASES,
-
 	[CLOCK_REALTIME]	= HRTIMER_BASE_REALTIME,
 	[CLOCK_MONOTONIC]	= HRTIMER_BASE_MONOTONIC,
 	[CLOCK_BOOTTIME]	= HRTIMER_BASE_BOOTTIME,
@@ -110,9 +107,7 @@ static const int hrtimer_clock_to_base_table[MAX_CLOCKS] = {
 
 static inline int hrtimer_clockid_to_base(clockid_t clock_id)
 {
-	int base = hrtimer_clock_to_base_table[clock_id];
-	BUG_ON(base == HRTIMER_MAX_CLOCK_BASES);
-	return base;
+	return hrtimer_clock_to_base_table[clock_id];
 }
 
 
@@ -298,7 +293,7 @@ EXPORT_SYMBOL_GPL(__ktime_divns);
  */
 ktime_t ktime_add_safe(const ktime_t lhs, const ktime_t rhs)
 {
-	ktime_t res = ktime_add_unsafe(lhs, rhs);
+	ktime_t res = ktime_add(lhs, rhs);
 
 	/*
 	 * We use KTIME_SEC_MAX here, the maximum timeout which we can
@@ -421,7 +416,6 @@ void destroy_hrtimer_on_stack(struct hrtimer *timer)
 {
 	debug_object_free(timer, &hrtimer_debug_descr);
 }
-EXPORT_SYMBOL_GPL(destroy_hrtimer_on_stack);
 
 #else
 static inline void debug_hrtimer_init(struct hrtimer *timer) { }

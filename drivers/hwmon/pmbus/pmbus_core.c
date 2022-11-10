@@ -987,15 +987,14 @@ static int pmbus_add_sensor_attrs_one(struct i2c_client *client,
 				      const struct pmbus_driver_info *info,
 				      const char *name,
 				      int index, int page,
-				      const struct pmbus_sensor_attr *attr,
-				      bool paged)
+				      const struct pmbus_sensor_attr *attr)
 {
 	struct pmbus_sensor *base;
 	int ret;
 
 	if (attr->label) {
 		ret = pmbus_add_label(data, name, index, attr->label,
-				      paged ? page + 1 : 0);
+				      attr->paged ? page + 1 : 0);
 		if (ret)
 			return ret;
 	}
@@ -1027,30 +1026,6 @@ static int pmbus_add_sensor_attrs_one(struct i2c_client *client,
 	return 0;
 }
 
-static bool pmbus_sensor_is_paged(const struct pmbus_driver_info *info,
-				  const struct pmbus_sensor_attr *attr)
-{
-	int p;
-
-	if (attr->paged)
-		return true;
-
-	/*
-	 * Some attributes may be present on more than one page despite
-	 * not being marked with the paged attribute. If that is the case,
-	 * then treat the sensor as being paged and add the page suffix to the
-	 * attribute name.
-	 * We don't just add the paged attribute to all such attributes, in
-	 * order to maintain the un-suffixed labels in the case where the
-	 * attribute is only on page 0.
-	 */
-	for (p = 1; p < info->pages; p++) {
-		if (info->func[p] & attr->func)
-			return true;
-	}
-	return false;
-}
-
 static int pmbus_add_sensor_attrs(struct i2c_client *client,
 				  struct pmbus_data *data,
 				  const char *name,
@@ -1064,15 +1039,14 @@ static int pmbus_add_sensor_attrs(struct i2c_client *client,
 	index = 1;
 	for (i = 0; i < nattrs; i++) {
 		int page, pages;
-		bool paged = pmbus_sensor_is_paged(info, attrs);
 
-		pages = paged ? info->pages : 1;
+		pages = attrs->paged ? info->pages : 1;
 		for (page = 0; page < pages; page++) {
 			if (!(info->func[page] & attrs->func))
 				continue;
 			ret = pmbus_add_sensor_attrs_one(client, data, info,
 							 name, index, page,
-							 attrs, paged);
+							 attrs);
 			if (ret)
 				return ret;
 			index++;
@@ -1731,10 +1705,7 @@ static int pmbus_init_common(struct i2c_client *client, struct pmbus_data *data,
 		}
 	}
 
-	if (data->info->pages)
-		pmbus_clear_faults(client);
-	else
-		pmbus_clear_fault_page(client, -1);
+	pmbus_clear_faults(client);
 
 	if (info->identify) {
 		ret = (*info->identify)(client, info);

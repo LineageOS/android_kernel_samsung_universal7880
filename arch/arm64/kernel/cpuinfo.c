@@ -23,8 +23,6 @@
 
 #include <linux/bitops.h>
 #include <linux/bug.h>
-#include <linux/compat.h>
-#include <linux/elf.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/personality.h>
@@ -104,7 +102,6 @@ static const char *compat_hwcap2_str[] = {
 static int c_show(struct seq_file *m, void *v)
 {
 	int i, j;
-	bool compat = personality(current->personality) == PER_LINUX32;
 
 	for_each_online_cpu(i) {
 		struct cpuinfo_arm64 *cpuinfo = &per_cpu(cpu_data, i);
@@ -116,9 +113,6 @@ static int c_show(struct seq_file *m, void *v)
 		 * "processor".  Give glibc what it expects.
 		 */
 		seq_printf(m, "processor\t: %d\n", i);
-		if (compat)
-			seq_printf(m, "model name\t: ARMv8 Processor rev %d (%s)\n",
-				   MIDR_REVISION(midr), COMPAT_ELF_PLATFORM);
 
 		/*
 		 * Dump out the common processor features in a single line.
@@ -127,7 +121,7 @@ static int c_show(struct seq_file *m, void *v)
 		 * software which does already (at least for 32-bit).
 		 */
 		seq_puts(m, "Features\t:");
-		if (compat) {
+		if (personality(current->personality) == PER_LINUX32) {
 #ifdef CONFIG_COMPAT
 			for (j = 0; compat_hwcap_str[j]; j++)
 				if (compat_elf_hwcap & (1 << j))

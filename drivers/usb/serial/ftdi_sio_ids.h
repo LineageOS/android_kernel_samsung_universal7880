@@ -38,16 +38,6 @@
 
 #define FTDI_LUMEL_PD12_PID	0x6002
 
-/*
- * Custom USB adapters made by Falconia Partners LLC
- * for FreeCalypso project, ID codes allocated to Falconia by FTDI.
- */
-#define FTDI_FALCONIA_JTAG_BUF_PID	0x7150
-#define FTDI_FALCONIA_JTAG_UNBUF_PID	0x7151
-
-/* Sienna Serial Interface by Secyourit GmbH */
-#define FTDI_SIENNA_PID		0x8348
-
 /* Cyber Cortex AV by Fabulous Silicon (http://fabuloussilicon.com) */
 #define CYBER_CORTEX_AV_PID	0x8698
 
@@ -166,7 +156,6 @@
 #define XSENS_AWINDA_DONGLE_PID 0x0102
 #define XSENS_MTW_PID		0x0200	/* Xsens MTw */
 #define XSENS_MTDEVBOARD_PID	0x0300	/* Motion Tracker Development Board */
-#define XSENS_MTIUSBCONVERTER_PID	0x0301	/* MTi USB converter */
 #define XSENS_CONVERTER_PID	0xD00D	/* Xsens USB-serial converter */
 
 /* Xsens devices using FTDI VID */
@@ -580,7 +569,6 @@
 #define FTDI_NT_ORIONLXM_PID		0x7c90	/* OrionLXm Substation Automation Platform */
 #define FTDI_NT_ORIONLX_PLUS_PID	0x7c91	/* OrionLX+ Substation Automation Platform */
 #define FTDI_NT_ORION_IO_PID		0x7c92	/* Orion I/O */
-#define FTDI_NT_ORIONMX_PID		0x7c93	/* OrionMX */
 
 /*
  * Synapse Wireless product ids (FTDI_VID)
@@ -609,25 +597,12 @@
 #define STK541_PID		0x2109 /* Zigbee Controller */
 
 /*
- * Texas Instruments
- */
-#define TI_VID			0x0451
-#define TI_CC3200_LAUNCHPAD_PID	0xC32A /* SimpleLink Wi-Fi CC3200 LaunchPad */
-
-/*
  * Blackfin gnICE JTAG
  * http://docs.blackfin.uclinux.org/doku.php?id=hw:jtag:gnice
  */
 #define ADI_VID			0x0456
 #define ADI_GNICE_PID		0xF000
 #define ADI_GNICEPLUS_PID	0xF001
-
-/*
- * Cypress WICED USB UART
- */
-#define CYPRESS_VID			0x04B4
-#define CYPRESS_WICED_BT_USB_PID	0x009B
-#define CYPRESS_WICED_WL_USB_PID	0xF900
 
 /*
  * Microchip Technology, Inc.
@@ -697,12 +672,6 @@
 #define BANDB_TTL5USB9M_PID	0xAC49
 #define BANDB_TTL3USB9M_PID	0xAC50
 #define BANDB_ZZ_PROG1_USB_PID	0xBA02
-
-/*
- * Echelon USB Serial Interface
- */
-#define ECHELON_VID		0x0920
-#define ECHELON_U20_PID		0x7500
 
 /*
  * Intrepid Control Systems (http://www.intrepidcs.com/) ValueCAN and NeoVI
@@ -931,12 +900,6 @@
 #define ICPDAS_I7560U_PID		0x0103
 #define ICPDAS_I7561U_PID		0x0104
 #define ICPDAS_I7563U_PID		0x0105
-
-/*
- * Airbus Defence and Space
- */
-#define AIRBUS_DS_VID			0x1e8e  /* Vendor ID */
-#define AIRBUS_DS_P8GR			0x6001  /* Tetra P8GR */
 
 /*
  * RT Systems programming cables for various ham radios
@@ -1327,12 +1290,6 @@
 #define IONICS_PLUGCOMPUTER_PID		0x0102
 
 /*
- * EZPrototypes (PID reseller)
- */
-#define EZPROTOTYPES_VID		0x1c40
-#define HJELMSLUND_USB485_ISO_PID	0x0477
-
-/*
  * Dresden Elektronik Sensor Terminal Board
  */
 #define DE_VID			0x1cf1 /* Vendor ID */
@@ -1559,23 +1516,3 @@
 #define CHETCO_SEASMART_DISPLAY_PID	0xA5AD /* SeaSmart NMEA2000 Display */
 #define CHETCO_SEASMART_LITE_PID	0xA5AE /* SeaSmart Lite USB Adapter */
 #define CHETCO_SEASMART_ANALOG_PID	0xA5AF /* SeaSmart Analog Adapter */
-
-/*
- * Unjo AB
- */
-#define UNJO_VID			0x22B7
-#define UNJO_ISODEBUG_V1_PID		0x150D
-
-/*
- * IDS GmbH
- */
-#define IDS_VID				0x2CAF
-#define IDS_SI31A_PID			0x13A2
-#define IDS_CM31A_PID			0x13A3
-
-/*
- * U-Blox products (http://www.u-blox.com).
- */
-#define UBLOX_VID			0x1546
-#define UBLOX_C099F9P_ZED_PID		0x0502
-#define UBLOX_C099F9P_ODIN_PID		0x0503

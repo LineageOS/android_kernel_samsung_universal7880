@@ -37,8 +37,6 @@
 
 #define ISCSI_TRANSPORT_VERSION "2.0-870"
 
-#define ISCSI_SEND_MAX_ALLOWED  10
-
 static int dbg_session;
 module_param_named(debug_session, dbg_session, int,
 		   S_IRUGO | S_IWUSR);
@@ -119,11 +117,7 @@ show_transport_handle(struct device *dev, struct device_attribute *attr,
 		      char *buf)
 {
 	struct iscsi_internal *priv = dev_to_iscsi_internal(dev);
-
-	if (!capable(CAP_SYS_ADMIN))
-		return -EACCES;
-	return sysfs_emit(buf, "%llu\n",
-		  (unsigned long long)iscsi_handle(priv->iscsi_transport));
+	return sprintf(buf, "%llu\n", (unsigned long long)iscsi_handle(priv->iscsi_transport));
 }
 static DEVICE_ATTR(handle, S_IRUGO, show_transport_handle, NULL);
 
@@ -133,7 +127,7 @@ show_transport_##name(struct device *dev, 				\
 		      struct device_attribute *attr,char *buf)		\
 {									\
 	struct iscsi_internal *priv = dev_to_iscsi_internal(dev);	\
-	return sysfs_emit(buf, format"\n", priv->iscsi_transport->name);\
+	return sprintf(buf, format"\n", priv->iscsi_transport->name);	\
 }									\
 static DEVICE_ATTR(name, S_IRUGO, show_transport_##name, NULL);
 
@@ -174,7 +168,7 @@ static ssize_t
 show_ep_handle(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct iscsi_endpoint *ep = iscsi_dev_to_endpoint(dev);
-	return sysfs_emit(buf, "%llu\n", (unsigned long long) ep->id);
+	return sprintf(buf, "%llu\n", (unsigned long long) ep->id);
 }
 static ISCSI_ATTR(ep, handle, S_IRUGO, show_ep_handle, NULL);
 
@@ -2016,7 +2010,7 @@ static void __iscsi_unbind_session(struct work_struct *work)
 	if (session->target_id == ISCSI_MAX_TARGET) {
 		spin_unlock_irqrestore(&session->lock, flags);
 		mutex_unlock(&ihost->mutex);
-		goto unbind_session_exit;
+		return;
 	}
 
 	target_id = session->target_id;
@@ -2028,8 +2022,6 @@ static void __iscsi_unbind_session(struct work_struct *work)
 		ida_simple_remove(&iscsi_sess_ida, target_id);
 
 	scsi_remove_target(&session->dev);
-
-unbind_session_exit:
 	iscsi_session_event(session, ISCSI_KEVENT_UNBIND_SESSION);
 	ISCSI_DBG_TRANS_SESSION(session, "Completed target removal\n");
 }
@@ -2786,9 +2778,6 @@ iscsi_set_param(struct iscsi_transport *transport, struct iscsi_uevent *ev)
 	struct iscsi_cls_session *session;
 	int err = 0, value = 0;
 
-	if (ev->u.set_param.len > PAGE_SIZE)
-		return -EINVAL;
-
 	session = iscsi_session_lookup(ev->u.set_param.sid);
 	conn = iscsi_conn_lookup(ev->u.set_param.sid, ev->u.set_param.cid);
 	if (!conn || !session)
@@ -2935,9 +2924,6 @@ iscsi_set_host_param(struct iscsi_transport *transport,
 	if (!transport->set_host_param)
 		return -ENOSYS;
 
-	if (ev->u.set_host_param.len > PAGE_SIZE)
-		return -EINVAL;
-
 	shost = scsi_host_lookup(ev->u.set_host_param.host_no);
 	if (!shost) {
 		printk(KERN_ERR "set_host_param could not find host no %u\n",
@@ -2973,24 +2959,6 @@ iscsi_set_path(struct iscsi_transport *transport, struct iscsi_uevent *ev)
 
 	scsi_host_put(shost);
 	return err;
-}
-
-static int iscsi_session_has_conns(int sid)
-{
-	struct iscsi_cls_conn *conn;
-	unsigned long flags;
-	int found = 0;
-
-	spin_lock_irqsave(&connlock, flags);
-	list_for_each_entry(conn, &connlist, conn_list) {
-		if (iscsi_conn_get_sid(conn) == sid) {
-			found = 1;
-			break;
-		}
-	}
-	spin_unlock_irqrestore(&connlock, flags);
-
-	return found;
 }
 
 static int
@@ -3200,7 +3168,7 @@ static int iscsi_set_flashnode_param(struct iscsi_transport *transport,
 		pr_err("%s could not find host no %u\n",
 		       __func__, ev->u.set_flashnode.host_no);
 		err = -ENODEV;
-		goto exit_set_fnode;
+		goto put_host;
 	}
 
 	idx = ev->u.set_flashnode.flashnode_idx;
@@ -3525,16 +3493,12 @@ iscsi_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh, uint32_t *group)
 {
 	int err = 0;
 	u32 portid;
-	u32 pdu_len;
 	struct iscsi_uevent *ev = nlmsg_data(nlh);
 	struct iscsi_transport *transport = NULL;
 	struct iscsi_internal *priv;
 	struct iscsi_cls_session *session;
 	struct iscsi_cls_conn *conn;
 	struct iscsi_endpoint *ep = NULL;
-
-	if (!netlink_capable(skb, CAP_SYS_ADMIN))
-		return -EPERM;
 
 	if (nlh->nlmsg_type == ISCSI_UEVENT_PATH_UPDATE)
 		*group = ISCSI_NL_GRP_UIP;
@@ -3574,12 +3538,10 @@ iscsi_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh, uint32_t *group)
 		break;
 	case ISCSI_UEVENT_DESTROY_SESSION:
 		session = iscsi_session_lookup(ev->u.d_session.sid);
-		if (!session)
-			err = -EINVAL;
-		else if (iscsi_session_has_conns(ev->u.d_session.sid))
-			err = -EBUSY;
-		else
+		if (session)
 			transport->destroy_session(session);
+		else
+			err = -EINVAL;
 		break;
 	case ISCSI_UEVENT_UNBIND_SESSION:
 		session = iscsi_session_lookup(ev->u.d_session.sid);
@@ -3643,14 +3605,6 @@ iscsi_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh, uint32_t *group)
 			err = -EINVAL;
 		break;
 	case ISCSI_UEVENT_SEND_PDU:
-		pdu_len = nlh->nlmsg_len - sizeof(*nlh) - sizeof(*ev);
-
-		if ((ev->u.send_pdu.hdr_size > pdu_len) ||
-		    (ev->u.send_pdu.data_size > (pdu_len - ev->u.send_pdu.hdr_size))) {
-			err = -EINVAL;
-			break;
-		}
-
 		conn = iscsi_conn_lookup(ev->u.send_pdu.sid, ev->u.send_pdu.cid);
 		if (conn)
 			ev->r.retcode =	transport->send_pdu(conn,
@@ -3744,7 +3698,6 @@ iscsi_if_rx(struct sk_buff *skb)
 		struct nlmsghdr	*nlh;
 		struct iscsi_uevent *ev;
 		uint32_t group;
-		int retries = ISCSI_SEND_MAX_ALLOWED;
 
 		nlh = nlmsg_hdr(skb);
 		if (nlh->nlmsg_len < sizeof(*nlh) + sizeof(*ev) ||
@@ -3775,10 +3728,6 @@ iscsi_if_rx(struct sk_buff *skb)
 				break;
 			err = iscsi_if_send_reply(portid, nlh->nlmsg_type,
 						  ev, sizeof(*ev));
-			if (err == -EAGAIN && --retries < 0) {
-				printk(KERN_WARNING "Send reply failed, error %d\n", err);
-				break;
-			}
 		} while (err < 0 && err != -ECONNREFUSED && err != -ESRCH);
 		skb_pull(skb, rlen);
 	}
@@ -4057,7 +4006,7 @@ show_priv_session_state(struct device *dev, struct device_attribute *attr,
 			char *buf)
 {
 	struct iscsi_cls_session *session = iscsi_dev_to_session(dev->parent);
-	return sysfs_emit(buf, "%s\n", iscsi_session_state_name(session->state));
+	return sprintf(buf, "%s\n", iscsi_session_state_name(session->state));
 }
 static ISCSI_CLASS_ATTR(priv_sess, state, S_IRUGO, show_priv_session_state,
 			NULL);
@@ -4066,7 +4015,7 @@ show_priv_session_creator(struct device *dev, struct device_attribute *attr,
 			char *buf)
 {
 	struct iscsi_cls_session *session = iscsi_dev_to_session(dev->parent);
-	return sysfs_emit(buf, "%d\n", session->creator);
+	return sprintf(buf, "%d\n", session->creator);
 }
 static ISCSI_CLASS_ATTR(priv_sess, creator, S_IRUGO, show_priv_session_creator,
 			NULL);
@@ -4075,7 +4024,7 @@ show_priv_session_target_id(struct device *dev, struct device_attribute *attr,
 			    char *buf)
 {
 	struct iscsi_cls_session *session = iscsi_dev_to_session(dev->parent);
-	return sysfs_emit(buf, "%d\n", session->target_id);
+	return sprintf(buf, "%d\n", session->target_id);
 }
 static ISCSI_CLASS_ATTR(priv_sess, target_id, S_IRUGO,
 			show_priv_session_target_id, NULL);
@@ -4088,8 +4037,8 @@ show_priv_session_##field(struct device *dev, 				\
 	struct iscsi_cls_session *session = 				\
 			iscsi_dev_to_session(dev->parent);		\
 	if (session->field == -1)					\
-		return sysfs_emit(buf, "off\n");			\
-	return sysfs_emit(buf, format"\n", session->field);		\
+		return sprintf(buf, "off\n");				\
+	return sprintf(buf, format"\n", session->field);		\
 }
 
 #define iscsi_priv_session_attr_store(field)				\

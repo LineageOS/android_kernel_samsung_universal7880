@@ -31,7 +31,6 @@
 
 #include <linux/linkage.h>
 #include <asm/inst.h>
-#include <asm/nospec-branch.h>
 
 #ifdef __x86_64__
 .data
@@ -2704,7 +2703,7 @@ ENTRY(aesni_xts_crypt8)
 	pxor INC, STATE4
 	movdqu IV, 0x30(OUTP)
 
-	CALL_NOSPEC %r11
+	call *%r11
 
 	movdqu 0x00(OUTP), INC
 	pxor INC, STATE1
@@ -2749,7 +2748,7 @@ ENTRY(aesni_xts_crypt8)
 	_aesni_gf128mul_x_ble()
 	movups IV, (IVP)
 
-	CALL_NOSPEC %r11
+	call *%r11
 
 	movdqu 0x40(OUTP), INC
 	pxor INC, STATE1

@@ -37,14 +37,6 @@ static const struct usb_device_id usb_quirk_list[] = {
 	/* CBM - Flash disk */
 	{ USB_DEVICE(0x0204, 0x6025), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* WORLDE Controller KS49 or Prodipe MIDI 49C USB controller */
-	{ USB_DEVICE(0x0218, 0x0201), .driver_info =
-			USB_QUIRK_CONFIG_INTF_STRINGS },
-
-	/* WORLDE easy key (easykey.25) MIDI controller  */
-	{ USB_DEVICE(0x0218, 0x0401), .driver_info =
-			USB_QUIRK_CONFIG_INTF_STRINGS },
-
 	/* HP 5300/5370C scanner */
 	{ USB_DEVICE(0x03f0, 0x0701), .driver_info =
 			USB_QUIRK_STRING_FETCH_255 },
@@ -73,12 +65,11 @@ static const struct usb_device_id usb_quirk_list[] = {
 	/* Logitech HD Webcam C270 */
 	{ USB_DEVICE(0x046d, 0x0825), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Logitech HD Pro Webcams C920, C920-C, C922, C925e and C930e */
+	/* Logitech HD Pro Webcams C920, C920-C, C925e and C930e */
 	{ USB_DEVICE(0x046d, 0x082d), .driver_info = USB_QUIRK_DELAY_INIT },
 	{ USB_DEVICE(0x046d, 0x0841), .driver_info = USB_QUIRK_DELAY_INIT },
 	{ USB_DEVICE(0x046d, 0x0843), .driver_info = USB_QUIRK_DELAY_INIT },
 	{ USB_DEVICE(0x046d, 0x085b), .driver_info = USB_QUIRK_DELAY_INIT },
-	{ USB_DEVICE(0x046d, 0x085c), .driver_info = USB_QUIRK_DELAY_INIT },
 
 	/* Logitech ConferenceCam CC3000e */
 	{ USB_DEVICE(0x046d, 0x0847), .driver_info = USB_QUIRK_DELAY_INIT },
@@ -86,9 +77,6 @@ static const struct usb_device_id usb_quirk_list[] = {
 
 	/* Logitech PTZ Pro Camera */
 	{ USB_DEVICE(0x046d, 0x0853), .driver_info = USB_QUIRK_DELAY_INIT },
-
-	/* Logitech Screen Share */
-	{ USB_DEVICE(0x046d, 0x086c), .driver_info = USB_QUIRK_NO_LPM },
 
 	/* Logitech Quickcam Fusion */
 	{ USB_DEVICE(0x046d, 0x08c1), .driver_info = USB_QUIRK_RESET_RESUME },
@@ -186,18 +174,11 @@ static const struct usb_device_id usb_quirk_list[] = {
 	{ USB_DEVICE(0x06a3, 0x0006), .driver_info =
 			USB_QUIRK_CONFIG_INTF_STRINGS },
 
-	/* Agfa SNAPSCAN 1212U */
-	{ USB_DEVICE(0x06bd, 0x0001), .driver_info = USB_QUIRK_RESET_RESUME },
-
 	/* Guillemot Webcam Hercules Dualpix Exchange (2nd ID) */
 	{ USB_DEVICE(0x06f8, 0x0804), .driver_info = USB_QUIRK_RESET_RESUME },
 
 	/* Guillemot Webcam Hercules Dualpix Exchange*/
 	{ USB_DEVICE(0x06f8, 0x3005), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Guillemot Hercules DJ Console audio card (BZ 208357) */
-	{ USB_DEVICE(0x06f8, 0xb000), .driver_info =
-			USB_QUIRK_ENDPOINT_BLACKLIST },
 
 	/* Midiman M-Audio Keystation 88es */
 	{ USB_DEVICE(0x0763, 0x0192), .driver_info = USB_QUIRK_RESET_RESUME },
@@ -221,14 +202,8 @@ static const struct usb_device_id usb_quirk_list[] = {
 	{ USB_DEVICE(0x0926, 0x3333), .driver_info =
 			USB_QUIRK_CONFIG_INTF_STRINGS },
 
-	/* Kingston DataTraveler 3.0 */
-	{ USB_DEVICE(0x0951, 0x1666), .driver_info = USB_QUIRK_NO_LPM },
-
 	/* X-Rite/Gretag-Macbeth Eye-One Pro display colorimeter */
 	{ USB_DEVICE(0x0971, 0x2000), .driver_info = USB_QUIRK_NO_SET_INTF },
-
-	/* ELMO L-12F document camera */
-	{ USB_DEVICE(0x09a1, 0x0028), .driver_info = USB_QUIRK_DELAY_CTRL_MSG },
 
 	/* Broadcom BCM92035DGROM BT dongle */
 	{ USB_DEVICE(0x0a5c, 0x2021), .driver_info = USB_QUIRK_RESET_RESUME },
@@ -238,17 +213,6 @@ static const struct usb_device_id usb_quirk_list[] = {
 
 	/* ASUS Base Station(T100) */
 	{ USB_DEVICE(0x0b05, 0x17e0), .driver_info =
-			USB_QUIRK_IGNORE_REMOTE_WAKEUP },
-
-	/* Realtek hub in Dell WD19 (Type-C) */
-	{ USB_DEVICE(0x0bda, 0x0487), .driver_info = USB_QUIRK_NO_LPM },
-	{ USB_DEVICE(0x0bda, 0x5487), .driver_info = USB_QUIRK_RESET_RESUME },
-
-	/* Generic RTL8153 based ethernet adapters */
-	{ USB_DEVICE(0x0bda, 0x8153), .driver_info = USB_QUIRK_NO_LPM },
-
-	/* SONiX USB DEVICE Touchpad */
-	{ USB_DEVICE(0x0c45, 0x7056), .driver_info =
 			USB_QUIRK_IGNORE_REMOTE_WAKEUP },
 
 	/* Action Semiconductor flash disk */
@@ -262,9 +226,6 @@ static const struct usb_device_id usb_quirk_list[] = {
 	{ USB_DEVICE(0x1532, 0x0116), .driver_info =
 			USB_QUIRK_LINEAR_UFRAME_INTR_BINTERVAL },
 
-	/* Lenovo ThinkPad USB-C Dock Gen2 Ethernet (RTL8153 GigE) */
-	{ USB_DEVICE(0x17ef, 0xa387), .driver_info = USB_QUIRK_NO_LPM },
-
 	/* BUILDWIN Photo Frame */
 	{ USB_DEVICE(0x1908, 0x1315), .driver_info =
 			USB_QUIRK_HONOR_BNUMINTERFACES },
@@ -277,9 +238,6 @@ static const struct usb_device_id usb_quirk_list[] = {
 	{ USB_DEVICE(0x1b1c, 0x1b15), .driver_info = USB_QUIRK_DELAY_INIT |
 	  USB_QUIRK_DELAY_CTRL_MSG },
 
-	/* Corsair K70 RGB */
-	{ USB_DEVICE(0x1b1c, 0x1b13), .driver_info = USB_QUIRK_DELAY_INIT },
-
 	/* Corsair Strafe RGB */
 	{ USB_DEVICE(0x1b1c, 0x1b20), .driver_info = USB_QUIRK_DELAY_INIT |
 	  USB_QUIRK_DELAY_CTRL_MSG },
@@ -289,10 +247,6 @@ static const struct usb_device_id usb_quirk_list[] = {
 
 	/* Corsair K70 LUX */
 	{ USB_DEVICE(0x1b1c, 0x1b36), .driver_info = USB_QUIRK_DELAY_INIT },
-
-	/* Corsair K70 RGB RAPDIFIRE */
-	{ USB_DEVICE(0x1b1c, 0x1b38), .driver_info = USB_QUIRK_DELAY_INIT |
-	  USB_QUIRK_DELAY_CTRL_MSG },
 
 	/* MIDI keyboard WORLDE MINI */
 	{ USB_DEVICE(0x1c75, 0x0204), .driver_info =
@@ -316,14 +270,8 @@ static const struct usb_device_id usb_quirk_list[] = {
 
 	{ USB_DEVICE(0x2386, 0x3119), .driver_info = USB_QUIRK_NO_LPM },
 
-	{ USB_DEVICE(0x2386, 0x350e), .driver_info = USB_QUIRK_NO_LPM },
-
 	/* DJI CineSSD */
 	{ USB_DEVICE(0x2ca3, 0x0031), .driver_info = USB_QUIRK_NO_LPM },
-
-	/* Fibocom L850-GL LTE Modem */
-	{ USB_DEVICE(0x2cb7, 0x0007), .driver_info =
-			USB_QUIRK_IGNORE_REMOTE_WAKEUP },
 
 	/* INTEL VALUE SSD */
 	{ USB_DEVICE(0x8086, 0xf1a5), .driver_info = USB_QUIRK_RESET_RESUME },
@@ -331,9 +279,6 @@ static const struct usb_device_id usb_quirk_list[] = {
 	/* Protocol and OTG Electrical Test Device */
 	{ USB_DEVICE(0x1a0a, 0x0200), .driver_info =
 			USB_QUIRK_LINEAR_UFRAME_INTR_BINTERVAL },
-
-	/* novation SoundControl XL */
-	{ USB_DEVICE(0x1235, 0x0061), .driver_info = USB_QUIRK_RESET_RESUME },
 
 	{ }  /* terminating entry must be last */
 };
@@ -361,40 +306,6 @@ static const struct usb_device_id usb_amd_resume_quirk_list[] = {
 
 	{ }  /* terminating entry must be last */
 };
-
-/*
- * Entries for blacklisted endpoints that should be ignored when parsing
- * configuration descriptors.
- *
- * Matched for devices with USB_QUIRK_ENDPOINT_BLACKLIST.
- */
-static const struct usb_device_id usb_endpoint_blacklist[] = {
-	{ USB_DEVICE_INTERFACE_NUMBER(0x06f8, 0xb000, 5), .driver_info = 0x01 },
-	{ USB_DEVICE_INTERFACE_NUMBER(0x06f8, 0xb000, 5), .driver_info = 0x81 },
-	{ }
-};
-
-bool usb_endpoint_is_blacklisted(struct usb_device *udev,
-		struct usb_host_interface *intf,
-		struct usb_endpoint_descriptor *epd)
-{
-	const struct usb_device_id *id;
-	unsigned int address;
-
-	for (id = usb_endpoint_blacklist; id->match_flags; ++id) {
-		if (!usb_match_device(udev, id))
-			continue;
-
-		if (!usb_match_one_id_intf(udev, intf, id))
-			continue;
-
-		address = id->driver_info;
-		if (address == epd->bEndpointAddress)
-			return true;
-	}
-
-	return false;
-}
 
 static bool usb_match_any_interface(struct usb_device *udev,
 				    const struct usb_device_id *id)

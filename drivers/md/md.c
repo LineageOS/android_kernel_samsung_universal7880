@@ -484,17 +484,6 @@ void mddev_init(struct mddev *mddev)
 }
 EXPORT_SYMBOL_GPL(mddev_init);
 
-static struct mddev *mddev_find_locked(dev_t unit)
-{
-	struct mddev *mddev;
-
-	list_for_each_entry(mddev, &all_mddevs, all_mddevs)
-		if (mddev->unit == unit)
-			return mddev;
-
-	return NULL;
-}
-
 static struct mddev *mddev_find(dev_t unit)
 {
 	struct mddev *mddev, *new = NULL;
@@ -506,13 +495,13 @@ static struct mddev *mddev_find(dev_t unit)
 	spin_lock(&all_mddevs_lock);
 
 	if (unit) {
-		mddev = mddev_find_locked(unit);
-		if (mddev) {
-			mddev_get(mddev);
-			spin_unlock(&all_mddevs_lock);
-			kfree(new);
-			return mddev;
-		}
+		list_for_each_entry(mddev, &all_mddevs, all_mddevs)
+			if (mddev->unit == unit) {
+				mddev_get(mddev);
+				spin_unlock(&all_mddevs_lock);
+				kfree(new);
+				return mddev;
+			}
 
 		if (new) {
 			list_add(&new->all_mddevs, &all_mddevs);
@@ -538,7 +527,12 @@ static struct mddev *mddev_find(dev_t unit)
 				return NULL;
 			}
 
-			is_free = !mddev_find_locked(dev);
+			is_free = 1;
+			list_for_each_entry(mddev, &all_mddevs, all_mddevs)
+				if (mddev->unit == dev) {
+					is_free = 0;
+					break;
+				}
 		}
 		new->unit = dev;
 		new->md_minor = MINOR(dev);
@@ -1026,9 +1020,8 @@ static int super_90_load(struct md_rdev *rdev, struct md_rdev *refdev, int minor
 	 * (not needed for Linear and RAID0 as metadata doesn't
 	 * record this size)
 	 */
-	if (IS_ENABLED(CONFIG_LBDAF) && (u64)rdev->sectors >= (2ULL << 32) &&
-	    sb->level >= 1)
-		rdev->sectors = (sector_t)(2ULL << 32) - 2;
+	if (rdev->sectors >= (2ULL << 32) && sb->level >= 1)
+		rdev->sectors = (2ULL << 32) - 2;
 
 	if (rdev->sectors < ((sector_t)sb->size) * 2 && sb->level >= 1)
 		/* "this cannot possibly happen" ... */
@@ -1321,9 +1314,8 @@ super_90_rdev_size_change(struct md_rdev *rdev, sector_t num_sectors)
 	/* Limit to 4TB as metadata cannot record more than that.
 	 * 4TB == 2^32 KB, or 2*2^32 sectors.
 	 */
-	if (IS_ENABLED(CONFIG_LBDAF) && (u64)num_sectors >= (2ULL << 32) &&
-	    rdev->mddev->level >= 1)
-		num_sectors = (sector_t)(2ULL << 32) - 2;
+	if (num_sectors >= (2ULL << 32) && rdev->mddev->level >= 1)
+		num_sectors = (2ULL << 32) - 2;
 	md_super_write(rdev->mddev, rdev, rdev->sb_start, rdev->sb_size,
 		       rdev->sb_page);
 	md_super_wait(rdev->mddev);
@@ -1651,20 +1643,9 @@ static int super_1_validate(struct mddev *mddev, struct md_rdev *rdev)
 				if (!(le32_to_cpu(sb->feature_map) &
 				      MD_FEATURE_RECOVERY_BITMAP))
 					rdev->saved_raid_disk = -1;
-			} else {
-				/*
-				 * If the array is FROZEN, then the device can't
-				 * be in_sync with rest of array.
-				 */
-				if (!test_bit(MD_RECOVERY_FROZEN,
-					      &mddev->recovery))
-					set_bit(In_sync, &rdev->flags);
-			}
+			} else
+				set_bit(In_sync, &rdev->flags);
 			rdev->raid_disk = role;
-			if (role >= mddev->raid_disks) {
-				rdev->saved_raid_disk = -1;
-				rdev->raid_disk = -1;
-			}
 			break;
 		}
 		if (sb->devflags & WriteMostly1)
@@ -1994,32 +1975,27 @@ int md_integrity_register(struct mddev *mddev)
 }
 EXPORT_SYMBOL(md_integrity_register);
 
-/*
- * Attempt to add an rdev, but only if it is consistent with the current
- * integrity profile
- */
-int md_integrity_add_rdev(struct md_rdev *rdev, struct mddev *mddev)
+/* Disable data integrity if non-capable/non-matching disk is being added */
+void md_integrity_add_rdev(struct md_rdev *rdev, struct mddev *mddev)
 {
 	struct blk_integrity *bi_rdev;
 	struct blk_integrity *bi_mddev;
-	char name[BDEVNAME_SIZE];
 
 	if (!mddev->gendisk)
-		return 0;
+		return;
 
 	bi_rdev = bdev_get_integrity(rdev->bdev);
 	bi_mddev = blk_get_integrity(mddev->gendisk);
 
 	if (!bi_mddev) /* nothing to do */
-		return 0;
-
-	if (blk_integrity_compare(mddev->gendisk, rdev->bdev->bd_disk) != 0) {
-		printk(KERN_NOTICE "%s: incompatible integrity profile for %s\n",
-				mdname(mddev), bdevname(rdev->bdev, name));
-		return -ENXIO;
-	}
-
-	return 0;
+		return;
+	if (rdev->raid_disk < 0) /* skip spares */
+		return;
+	if (bi_rdev && blk_integrity_compare(mddev->gendisk,
+					     rdev->bdev->bd_disk) >= 0)
+		return;
+	printk(KERN_NOTICE "disabling data integrity on %s\n", mdname(mddev));
+	blk_integrity_unregister(mddev->gendisk);
 }
 EXPORT_SYMBOL(md_integrity_add_rdev);
 
@@ -6281,7 +6257,7 @@ static int md_ioctl(struct block_device *bdev, fmode_t mode,
 		/* need to ensure recovery thread has run */
 		wait_event_interruptible_timeout(mddev->sb_wait,
 						 !test_bit(MD_RECOVERY_NEEDED,
-							   &mddev->recovery),
+							   &mddev->flags),
 						 msecs_to_jiffies(5000));
 	if (cmd == STOP_ARRAY || cmd == STOP_ARRAY_RO) {
 		/* Need to flush page cache, and ensure no-one else opens
@@ -6530,9 +6506,9 @@ static int md_open(struct block_device *bdev, fmode_t mode)
 		 */
 		mddev_put(mddev);
 		/* Wait until bdev->bd_disk is definitely gone */
-		if (work_pending(&mddev->del_work))
-			flush_workqueue(md_misc_wq);
-		return -EBUSY;
+		flush_workqueue(md_misc_wq);
+		/* Then retry the open from the top */
+		return -ERESTARTSYS;
 	}
 	BUG_ON(mddev != bdev->bd_disk->private_data);
 
@@ -6725,9 +6701,9 @@ static void status_unused(struct seq_file *seq)
 static void status_resync(struct seq_file *seq, struct mddev *mddev)
 {
 	sector_t max_sectors, resync, res;
-	unsigned long dt, db = 0;
-	sector_t rt, curr_mark_cnt, resync_mark_cnt;
-	int scale, recovery_active;
+	unsigned long dt, db;
+	sector_t rt;
+	int scale;
 	unsigned int per_milli;
 
 	if (mddev->curr_resync <= 3)
@@ -6783,30 +6759,22 @@ static void status_resync(struct seq_file *seq, struct mddev *mddev)
 	 * db: blocks written from mark until now
 	 * rt: remaining time
 	 *
-	 * rt is a sector_t, which is always 64bit now. We are keeping
-	 * the original algorithm, but it is not really necessary.
-	 *
-	 * Original algorithm:
-	 *   So we divide before multiply in case it is 32bit and close
-	 *   to the limit.
-	 *   We scale the divisor (db) by 32 to avoid losing precision
-	 *   near the end of resync when the number of remaining sectors
-	 *   is close to 'db'.
-	 *   We then divide rt by 32 after multiplying by db to compensate.
-	 *   The '+1' avoids division by zero if db is very small.
+	 * rt is a sector_t, so could be 32bit or 64bit.
+	 * So we divide before multiply in case it is 32bit and close
+	 * to the limit.
+	 * We scale the divisor (db) by 32 to avoid losing precision
+	 * near the end of resync when the number of remaining sectors
+	 * is close to 'db'.
+	 * We then divide rt by 32 after multiplying by db to compensate.
+	 * The '+1' avoids division by zero if db is very small.
 	 */
 	dt = ((jiffies - mddev->resync_mark) / HZ);
 	if (!dt) dt++;
-
-	curr_mark_cnt = mddev->curr_mark_cnt;
-	recovery_active = atomic_read(&mddev->recovery_active);
-	resync_mark_cnt = mddev->resync_mark_cnt;
-
-	if (curr_mark_cnt >= (recovery_active + resync_mark_cnt))
-		db = curr_mark_cnt - (recovery_active + resync_mark_cnt);
+	db = (mddev->curr_mark_cnt - atomic_read(&mddev->recovery_active))
+		- mddev->resync_mark_cnt;
 
 	rt = max_sectors - resync;    /* number of remaining sectors */
-	rt = div64_u64(rt, db/32+1);
+	sector_div(rt, db/32+1);
 	rt *= dt;
 	rt >>= 5;
 
@@ -7827,8 +7795,7 @@ void md_reap_sync_thread(struct mddev *mddev)
 	md_unregister_thread(&mddev->sync_thread);
 	wake_up(&resync_wait);
 	if (!test_bit(MD_RECOVERY_INTR, &mddev->recovery) &&
-	    !test_bit(MD_RECOVERY_REQUESTED, &mddev->recovery) &&
-	    mddev->degraded != mddev->raid_disks) {
+	    !test_bit(MD_RECOVERY_REQUESTED, &mddev->recovery)) {
 		/* success...*/
 		/* activate any spares */
 		if (mddev->pers->spare_active(mddev)) {

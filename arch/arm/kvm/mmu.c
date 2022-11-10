@@ -256,6 +256,14 @@ static void unmap_range(struct kvm *kvm, pgd_t *pgdp,
 		next = kvm_pgd_addr_end(addr, end);
 		if (!pgd_none(*pgd))
 			unmap_puds(kvm, pgd, addr, next);
+		/*
+		 * If we are dealing with a large range in
+		 * stage2 table, release the kvm->mmu_lock
+		 * to prevent starvation and lockup detector
+		 * warnings.
+		 */
+		if (kvm && (next != end))
+			cond_resched_lock(&kvm->mmu_lock);
 	} while (pgd++, addr = next, addr != end);
 }
 
@@ -771,25 +779,24 @@ void stage2_unmap_vm(struct kvm *kvm)
  * Walks the level-1 page table pointed to by kvm->arch.pgd and frees all
  * underlying level-2 and level-3 tables before freeing the actual level-1 table
  * and setting the struct pointer to NULL.
+ *
+ * Note we don't need locking here as this is only called when the VM is
+ * destroyed, which can only be done once.
  */
 void kvm_free_stage2_pgd(struct kvm *kvm)
 {
-	void *pgd = NULL;
-	void *hwpgd = NULL;
+	if (kvm->arch.pgd == NULL)
+		return;
 
 	spin_lock(&kvm->mmu_lock);
-	if (kvm->arch.pgd) {
-		unmap_stage2_range(kvm, 0, KVM_PHYS_SIZE);
-		pgd = READ_ONCE(kvm->arch.pgd);
-		hwpgd = kvm_get_hwpgd(kvm);
-		kvm->arch.pgd = NULL;
-	}
+	unmap_stage2_range(kvm, 0, KVM_PHYS_SIZE);
 	spin_unlock(&kvm->mmu_lock);
 
-	if (hwpgd)
-		kvm_free_hwpgd(hwpgd);
-	if (KVM_PREALLOC_LEVEL > 0 && pgd)
-		kfree(pgd);
+	kvm_free_hwpgd(kvm_get_hwpgd(kvm));
+	if (KVM_PREALLOC_LEVEL > 0)
+		kfree(kvm->arch.pgd);
+
+	kvm->arch.pgd = NULL;
 }
 
 static pud_t *stage2_get_pud(struct kvm *kvm, struct kvm_mmu_memory_cache *cache,
@@ -817,9 +824,6 @@ static pmd_t *stage2_get_pmd(struct kvm *kvm, struct kvm_mmu_memory_cache *cache
 	pmd_t *pmd;
 
 	pud = stage2_get_pud(kvm, cache, addr);
-	if (!pud)
-		return NULL;
-
 	if (pud_none(*pud)) {
 		if (!cache)
 			return NULL;
@@ -1433,7 +1437,7 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	 * Prevent userspace from creating a memory region outside of the IPA
 	 * space addressable by the KVM guest IPA space.
 	 */
-	if (memslot->base_gfn + memslot->npages >
+	if (memslot->base_gfn + memslot->npages >=
 	    (KVM_PHYS_SIZE >> PAGE_SHIFT))
 		return -EFAULT;
 

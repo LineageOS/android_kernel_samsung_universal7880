@@ -50,7 +50,6 @@
 #include <linux/stringify.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/nospec.h>
 #include <asm/uaccess.h>
 
 #include "common.h"
@@ -2262,7 +2261,6 @@ static int cxgb_extension_ioctl(struct net_device *dev, void __user *useraddr)
 
 		if (t.qset_idx >= nqsets)
 			return -EINVAL;
-		t.qset_idx = array_index_nospec(t.qset_idx, nqsets);
 
 		q = &adapter->params.sge.qset[q1 + t.qset_idx];
 		t.rspq_size = q->rspq_size;
@@ -2437,8 +2435,6 @@ static int cxgb_extension_ioctl(struct net_device *dev, void __user *useraddr)
 
 		if (!is_offload(adapter))
 			return -EOPNOTSUPP;
-		if (!capable(CAP_NET_ADMIN))
-			return -EPERM;
 		if (!(adapter->flags & FULL_INIT_DONE))
 			return -EIO;	/* need the memory controllers */
 		if (copy_from_user(&t, useraddr, sizeof(t)))
@@ -3262,7 +3258,7 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (!adapter->regs) {
 		dev_err(&pdev->dev, "cannot map device registers\n");
 		err = -ENOMEM;
-		goto out_free_adapter_nofail;
+		goto out_free_adapter;
 	}
 
 	adapter->pdev = pdev;
@@ -3379,9 +3375,6 @@ out_free_dev:
 	for (i = ai->nports0 + ai->nports1 - 1; i >= 0; --i)
 		if (adapter->port[i])
 			free_netdev(adapter->port[i]);
-
-out_free_adapter_nofail:
-	kfree_skb(adapter->nofail_skb);
 
 out_free_adapter:
 	kfree(adapter);

@@ -30,9 +30,7 @@
 #include <linux/highmem.h>
 #include <linux/perf_event.h>
 #include <linux/exynos-ss.h>
-#include <linux/preempt.h>
 
-#include <asm/bug.h>
 #include <asm/cpufeature.h>
 #include <asm/exception.h>
 #include <asm/debug-monitors.h>
@@ -72,21 +70,21 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 			break;
 
 		pud = pud_offset(pgd, addr);
-		pr_cont(", *pud=%016llx", pud_val(*pud));
+		printk(", *pud=%016llx", pud_val(*pud));
 		if (pud_none(*pud) || pud_bad(*pud))
 			break;
 
 		pmd = pmd_offset(pud, addr);
-		pr_cont(", *pmd=%016llx", pmd_val(*pmd));
+		printk(", *pmd=%016llx", pmd_val(*pmd));
 		if (pmd_none(*pmd) || pmd_bad(*pmd))
 			break;
 
 		pte = pte_offset_map(pmd, addr);
-		pr_cont(", *pte=%016llx", pte_val(*pte));
+		printk(", *pte=%016llx", pte_val(*pte));
 		pte_unmap(pte);
 	} while(0);
 
-	pr_cont("\n");
+	printk("\n");
 }
 
 static int __do_kernel_fault_safe(struct mm_struct *mm, unsigned long addr,
@@ -459,7 +457,7 @@ static const struct fault_info {
 	{ do_translation_fault,	SIGSEGV, SEGV_MAPERR,	"input address range fault"	},
 	{ do_translation_fault,	SIGSEGV, SEGV_MAPERR,	"level 1 translation fault"	},
 	{ do_translation_fault,	SIGSEGV, SEGV_MAPERR,	"level 2 translation fault"	},
-	{ do_translation_fault,	SIGSEGV, SEGV_MAPERR,	"level 3 translation fault"	},
+	{ do_page_fault,	SIGSEGV, SEGV_MAPERR,	"level 3 translation fault"	},
 	{ do_bad,		SIGBUS,  0,		"reserved access flag fault"	},
 	{ do_page_fault,	SIGSEGV, SEGV_ACCERR,	"level 1 access flag fault"	},
 	{ do_page_fault,	SIGSEGV, SEGV_ACCERR,	"level 2 access flag fault"	},
@@ -596,54 +594,32 @@ void __init hook_debug_fault_code(int nr,
 	debug_fault_info[nr].name	= name;
 }
 
-asmlinkage int __exception do_debug_exception(unsigned long addr_if_watchpoint,
+asmlinkage int __exception do_debug_exception(unsigned long addr,
 					      unsigned int esr,
 					      struct pt_regs *regs)
 {
 	const struct fault_info *inf = debug_fault_info + DBG_ESR_EVT(esr);
-	unsigned long pc = instruction_pointer(regs);
 	struct siginfo info;
-	int rv;
 
-	/*
-	 * Tell lockdep we disabled irqs in entry.S. Do nothing if they were
-	 * already disabled to preserve the last enabled/disabled addresses.
-	 */
-	if (interrupts_enabled(regs))
-		trace_hardirqs_off();
+	if (!inf->fn(addr, esr, regs))
+		return 1;
 
-	if (!inf->fn(addr_if_watchpoint, esr, regs)) {
-		rv = 1;
-	} else {
-		pr_alert("Unhandled debug exception: %s (0x%08x) at 0x%016lx\n",
-			 inf->name, esr, pc);
+	pr_alert("Unhandled debug exception: %s (0x%08x) at 0x%016lx\n",
+		 inf->name, esr, addr);
 
-		info.si_signo = inf->sig;
-		info.si_errno = 0;
-		info.si_code  = inf->code;
-		info.si_addr  = (void __user *)pc;
-		arm64_notify_die("", regs, &info, 0);
-		rv = 0;
-	}
+	info.si_signo = inf->sig;
+	info.si_errno = 0;
+	info.si_code  = inf->code;
+	info.si_addr  = (void __user *)addr;
+	arm64_notify_die("", regs, &info, 0);
 
-	if (interrupts_enabled(regs))
-		trace_hardirqs_on();
-
-	return rv;
+	return 0;
 }
 
 #ifdef CONFIG_ARM64_PAN
-int cpu_enable_pan(void *__unused)
+void cpu_enable_pan(void *__unused)
 {
-	/*
-	 * We modify PSTATE. This won't work from irq context as the PSTATE
-	 * is discarded once we return from the exception.
-	 */
-	WARN_ON_ONCE(in_interrupt());
-
 	config_sctlr_el1(SCTLR_EL1_SPAN, 0);
-	asm(SET_PSTATE_PAN(1));
-	return 0;
 }
 #endif /* CONFIG_ARM64_PAN */
 
@@ -654,9 +630,8 @@ int cpu_enable_pan(void *__unused)
  * We need to enable the feature at runtime (instead of adding it to
  * PSR_MODE_EL1h) as the feature may not be implemented by the cpu.
  */
-int cpu_enable_uao(void *__unused)
+void cpu_enable_uao(void *__unused)
 {
 	asm(SET_PSTATE_UAO(1));
-	return 0;
 }
 #endif /* CONFIG_ARM64_UAO */

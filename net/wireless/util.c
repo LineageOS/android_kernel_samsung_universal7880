@@ -255,36 +255,12 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 		if (params->key_len != WLAN_KEY_LEN_CCMP)
 			return -EINVAL;
 		break;
-	case WLAN_CIPHER_SUITE_CCMP_256:
-		if (params->key_len != WLAN_KEY_LEN_CCMP_256)
-			return -EINVAL;
-		break;
-	case WLAN_CIPHER_SUITE_GCMP:
-		if (params->key_len != WLAN_KEY_LEN_GCMP)
-			return -EINVAL;
-		break;
-	case WLAN_CIPHER_SUITE_GCMP_256:
-		if (params->key_len != WLAN_KEY_LEN_GCMP_256)
-			return -EINVAL;
-		break;
 	case WLAN_CIPHER_SUITE_WEP104:
 		if (params->key_len != WLAN_KEY_LEN_WEP104)
 			return -EINVAL;
 		break;
 	case WLAN_CIPHER_SUITE_AES_CMAC:
 		if (params->key_len != WLAN_KEY_LEN_AES_CMAC)
-			return -EINVAL;
-		break;
-	case WLAN_CIPHER_SUITE_BIP_CMAC_256:
-		if (params->key_len != WLAN_KEY_LEN_BIP_CMAC_256)
-			return -EINVAL;
-		break;
-	case WLAN_CIPHER_SUITE_BIP_GMAC_128:
-		if (params->key_len != WLAN_KEY_LEN_BIP_GMAC_128)
-			return -EINVAL;
-		break;
-	case WLAN_CIPHER_SUITE_BIP_GMAC_256:
-		if (params->key_len != WLAN_KEY_LEN_BIP_GMAC_256)
 			return -EINVAL;
 		break;
 	default:
@@ -306,13 +282,7 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 			return -EINVAL;
 		case WLAN_CIPHER_SUITE_TKIP:
 		case WLAN_CIPHER_SUITE_CCMP:
-		case WLAN_CIPHER_SUITE_CCMP_256:
-		case WLAN_CIPHER_SUITE_GCMP:
-		case WLAN_CIPHER_SUITE_GCMP_256:
 		case WLAN_CIPHER_SUITE_AES_CMAC:
-		case WLAN_CIPHER_SUITE_BIP_CMAC_256:
-		case WLAN_CIPHER_SUITE_BIP_GMAC_128:
-		case WLAN_CIPHER_SUITE_BIP_GMAC_256:
 			if (params->seq_len != 6)
 				return -EINVAL;
 			break;
@@ -391,8 +361,8 @@ unsigned int ieee80211_get_mesh_hdrlen(struct ieee80211s_hdr *meshhdr)
 }
 EXPORT_SYMBOL(ieee80211_get_mesh_hdrlen);
 
-static int __ieee80211_data_to_8023(struct sk_buff *skb, const u8 *addr,
-				    enum nl80211_iftype iftype, bool is_amsdu)
+int ieee80211_data_to_8023(struct sk_buff *skb, const u8 *addr,
+			   enum nl80211_iftype iftype)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 	u16 hdrlen, ethertype;
@@ -485,7 +455,7 @@ static int __ieee80211_data_to_8023(struct sk_buff *skb, const u8 *addr,
 	payload = skb->data + hdrlen;
 	ethertype = (payload[6] << 8) | payload[7];
 
-	if (likely((!is_amsdu && ether_addr_equal(payload, rfc1042_header) &&
+	if (likely((ether_addr_equal(payload, rfc1042_header) &&
 		    ethertype != ETH_P_AARP && ethertype != ETH_P_IPX) ||
 		   ether_addr_equal(payload, bridge_tunnel_header))) {
 		/* remove RFC1042 or Bridge-Tunnel encapsulation and
@@ -505,12 +475,6 @@ static int __ieee80211_data_to_8023(struct sk_buff *skb, const u8 *addr,
 		ehdr->h_proto = len;
 	}
 	return 0;
-}
-
-int ieee80211_data_to_8023(struct sk_buff *skb, const u8 *addr,
-			   enum nl80211_iftype iftype)
-{
-	return __ieee80211_data_to_8023(skb, addr, iftype, false);
 }
 EXPORT_SYMBOL(ieee80211_data_to_8023);
 
@@ -668,9 +632,6 @@ void ieee80211_amsdu_to_8023s(struct sk_buff *skb, struct sk_buff_head *list,
 		padding = (4 - subframe_len) & 0x3;
 		/* the last MSDU has no padding */
 		if (subframe_len > remaining)
-			goto purge;
-		/* mitigate A-MSDU aggregation injection attacks */
-		if (ether_addr_equal(eth->h_dest, rfc1042_header))
 			goto purge;
 
 		skb_pull(skb, sizeof(struct ethhdr));
@@ -962,7 +923,6 @@ int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 		}
 
 		cfg80211_process_rdev_events(rdev);
-		cfg80211_mlme_purge_registrations(dev->ieee80211_ptr);
 	}
 
 	err = rdev_change_virtual_intf(rdev, dev, ntype, flags, params);
@@ -1668,48 +1628,3 @@ bool cfg80211_is_gratuitous_arp_unsolicited_na(struct sk_buff *skb)
 	return false;
 }
 EXPORT_SYMBOL(cfg80211_is_gratuitous_arp_unsolicited_na);
-
-/* Layer 2 Update frame (802.2 Type 1 LLC XID Update response) */
-struct iapp_layer2_update {
-	u8 da[ETH_ALEN];	/* broadcast */
-	u8 sa[ETH_ALEN];	/* STA addr */
-	__be16 len;		/* 6 */
-	u8 dsap;		/* 0 */
-	u8 ssap;		/* 0 */
-	u8 control;
-	u8 xid_info[3];
-} __packed;
-
-void cfg80211_send_layer2_update(struct net_device *dev, const u8 *addr)
-{
-	struct iapp_layer2_update *msg;
-	struct sk_buff *skb;
-
-	/* Send Level 2 Update Frame to update forwarding tables in layer 2
-	 * bridge devices */
-
-	skb = dev_alloc_skb(sizeof(*msg));
-	if (!skb)
-		return;
-	msg = (struct iapp_layer2_update *)skb_put(skb, sizeof(*msg));
-
-	/* 802.2 Type 1 Logical Link Control (LLC) Exchange Identifier (XID)
-	 * Update response frame; IEEE Std 802.2-1998, 5.4.1.2.1 */
-
-	eth_broadcast_addr(msg->da);
-	ether_addr_copy(msg->sa, addr);
-	msg->len = htons(6);
-	msg->dsap = 0;
-	msg->ssap = 0x01;	/* NULL LSAP, CR Bit: Response */
-	msg->control = 0xaf;	/* XID response lsb.1111F101.
-				 * F=0 (no poll command; unsolicited frame) */
-	msg->xid_info[0] = 0x81;	/* XID format identifier */
-	msg->xid_info[1] = 1;	/* LLC types/classes: Type 1 LLC */
-	msg->xid_info[2] = 0;	/* XID sender's receive window size (RW) */
-
-	skb->dev = dev;
-	skb->protocol = eth_type_trans(skb, dev);
-	memset(skb->cb, 0, sizeof(skb->cb));
-	netif_rx_ni(skb);
-}
-EXPORT_SYMBOL(cfg80211_send_layer2_update);

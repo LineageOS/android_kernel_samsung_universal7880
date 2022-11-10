@@ -321,9 +321,6 @@ static bool matching_id(char *idstr, char *list_id)
 {
 	int i;
 
-	if (strlen(idstr) != strlen(list_id))
-		return false;
-
 	if (memcmp(idstr, list_id, 3))
 		return false;
 

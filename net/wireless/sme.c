@@ -434,7 +434,7 @@ static int cfg80211_sme_connect(struct wireless_dev *wdev,
 	if (wdev->current_bss)
 		return -EALREADY;
 
-	if (wdev->conn)
+	if (WARN_ON(wdev->conn))
 		return -EINPROGRESS;
 
 	wdev->conn = kzalloc(sizeof(*wdev->conn), GFP_KERNEL);

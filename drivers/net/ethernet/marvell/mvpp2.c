@@ -3277,7 +3277,7 @@ static void mvpp2_cls_init(struct mvpp2 *priv)
 	mvpp2_write(priv, MVPP2_CLS_MODE_REG, MVPP2_CLS_MODE_ACTIVE_MASK);
 
 	/* Clear classifier flow table */
-	memset(&fe.data, 0, sizeof(fe.data));
+	memset(&fe.data, 0, MVPP2_CLS_FLOWS_TBL_DATA_WORDS);
 	for (index = 0; index < MVPP2_CLS_FLOWS_TBL_SIZE; index++) {
 		fe.index = index;
 		mvpp2_cls_flow_write(priv, &fe);
@@ -3918,7 +3918,7 @@ static inline void mvpp2_gmac_max_rx_size_set(struct mvpp2_port *port)
 /* Set defaults to the MVPP2 port */
 static void mvpp2_defaults_set(struct mvpp2_port *port)
 {
-	int tx_port_num, val, queue, lrxq;
+	int tx_port_num, val, queue, ptxq, lrxq;
 
 	/* Configure port to loopback if needed */
 	if (port->flags & MVPP2_F_LOOPBACK)
@@ -3938,9 +3938,11 @@ static void mvpp2_defaults_set(struct mvpp2_port *port)
 	mvpp2_write(port->priv, MVPP2_TXP_SCHED_CMD_1_REG, 0);
 
 	/* Close bandwidth for all queues */
-	for (queue = 0; queue < MVPP2_MAX_TXQ; queue++)
+	for (queue = 0; queue < MVPP2_MAX_TXQ; queue++) {
+		ptxq = mvpp2_txq_phys(port->id, queue);
 		mvpp2_write(port->priv,
-			    MVPP2_TXQ_SCHED_TOKEN_CNTR_REG(queue), 0);
+			    MVPP2_TXQ_SCHED_TOKEN_CNTR_REG(ptxq), 0);
+	}
 
 	/* Set refill period to 1 usec, refill tokens
 	 * and bucket size to maximum
@@ -4410,13 +4412,14 @@ static void mvpp2_txq_bufs_free(struct mvpp2_port *port,
 							txq_pcpu->txq_get_index;
 		struct sk_buff *skb = txq_pcpu->tx_skb[txq_pcpu->txq_get_index];
 
+		mvpp2_txq_inc_get(txq_pcpu);
+
+		if (!skb)
+			continue;
 
 		dma_unmap_single(port->dev->dev.parent, tx_desc->buf_phys_addr,
 				 tx_desc->data_size, DMA_TO_DEVICE);
-		if (skb)
-			dev_kfree_skb_any(skb);
-
-		mvpp2_txq_inc_get(txq_pcpu);
+		dev_kfree_skb_any(skb);
 	}
 }
 
@@ -4686,7 +4689,7 @@ static void mvpp2_txq_deinit(struct mvpp2_port *port,
 	txq->descs_phys        = 0;
 
 	/* Set minimum bandwidth for disabled TXQs */
-	mvpp2_write(port->priv, MVPP2_TXQ_SCHED_TOKEN_CNTR_REG(txq->log_id), 0);
+	mvpp2_write(port->priv, MVPP2_TXQ_SCHED_TOKEN_CNTR_REG(txq->id), 0);
 
 	/* Set Tx descriptors queue starting address and size */
 	mvpp2_write(port->priv, MVPP2_TXQ_NUM_REG, txq->id);
@@ -5582,7 +5585,6 @@ static void mvpp2_set_rx_mode(struct net_device *dev)
 	int id = port->id;
 	bool allmulti = dev->flags & IFF_ALLMULTI;
 
-retry:
 	mvpp2_prs_mac_promisc_set(priv, id, dev->flags & IFF_PROMISC);
 	mvpp2_prs_mac_multi_set(priv, id, MVPP2_PE_MAC_MC_ALL, allmulti);
 	mvpp2_prs_mac_multi_set(priv, id, MVPP2_PE_MAC_MC_IP6, allmulti);
@@ -5590,13 +5592,9 @@ retry:
 	/* Remove all port->id's mcast enries */
 	mvpp2_prs_mcast_del_all(priv, id);
 
-	if (!allmulti) {
-		netdev_for_each_mc_addr(ha, dev) {
-			if (mvpp2_prs_mac_da_accept(priv, id, ha->addr, true)) {
-				allmulti = true;
-				goto retry;
-			}
-		}
+	if (allmulti && !netdev_mc_empty(dev)) {
+		netdev_for_each_mc_addr(ha, dev)
+			mvpp2_prs_mac_da_accept(priv, id, ha->addr, true);
 	}
 }
 

@@ -438,7 +438,7 @@ void hci_sock_dev_event(struct hci_dev *hdev, int event)
 		/* Detach sockets from device */
 		read_lock(&hci_sk_list.lock);
 		sk_for_each(sk, &hci_sk_list.head) {
-			lock_sock(sk);
+			bh_lock_sock_nested(sk);
 			if (hci_pi(sk)->hdev == hdev) {
 				hci_pi(sk)->hdev = NULL;
 				sk->sk_err = EPIPE;
@@ -447,7 +447,7 @@ void hci_sock_dev_event(struct hci_dev *hdev, int event)
 
 				hci_dev_put(hdev);
 			}
-			release_sock(sk);
+			bh_unlock_sock(sk);
 		}
 		read_unlock(&hci_sk_list.lock);
 	}
@@ -463,12 +463,13 @@ static int hci_sock_release(struct socket *sock)
 	if (!sk)
 		return 0;
 
+	hdev = hci_pi(sk)->hdev;
+
 	if (hci_pi(sk)->channel == HCI_CHANNEL_MONITOR)
 		atomic_dec(&monitor_promisc);
 
 	bt_sock_unlink(&hci_sk_list, sk);
 
-	hdev = hci_pi(sk)->hdev;
 	if (hdev) {
 		if (hci_pi(sk)->channel == HCI_CHANNEL_USER) {
 			mgmt_index_added(hdev);

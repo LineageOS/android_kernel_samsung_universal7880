@@ -596,7 +596,7 @@ static int vlan_dev_init(struct net_device *dev)
 			   NETIF_F_HIGHDMA | NETIF_F_SCTP_CSUM |
 			   NETIF_F_ALL_FCOE;
 
-	dev->features |= dev->hw_features | NETIF_F_LLTX;
+	dev->features |= real_dev->vlan_features | NETIF_F_LLTX;
 	dev->gso_max_size = real_dev->gso_max_size;
 	if (dev->features & NETIF_F_VLAN_FEATURES)
 		netdev_warn(real_dev, "VLAN features are set incorrectly.  Q-in-Q configurations may not work correctly.\n");
@@ -639,8 +639,7 @@ static int vlan_dev_init(struct net_device *dev)
 	return 0;
 }
 
-/* Note: this function might be called multiple times for the same device. */
-void vlan_dev_uninit(struct net_device *dev)
+static void vlan_dev_uninit(struct net_device *dev)
 {
 	struct vlan_priority_tci_mapping *pm;
 	struct vlan_dev_priv *vlan = vlan_dev_priv(dev);

@@ -267,8 +267,7 @@ void tcp_select_initial_window(int __space, __u32 mss,
 		/* Set window scaling on max possible window
 		 * See RFC1323 for an explanation of the limit to 14
 		 */
-		space = max_t(u32, space, sysctl_tcp_rmem[2]);
-		space = max_t(u32, space, sysctl_rmem_max);
+		space = max_t(u32, sysctl_tcp_rmem[2], sysctl_rmem_max);
 		space = min_t(u32, space, *window_clamp);
 		while (space > 65535 && (*rcv_wscale) < 14) {
 			space >>= 1;
@@ -764,9 +763,8 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 #ifdef CONFIG_MPTCP
 		if (opts->num_sack_blocks)
 #endif
-		if (likely(opts->num_sack_blocks))
-			size += TCPOLEN_SACK_BASE_ALIGNED +
-				opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
+		size += TCPOLEN_SACK_BASE_ALIGNED +
+			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
 	}
 
 	return size;
@@ -1289,7 +1287,6 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *buff;
 	int nsize, old_factor;
-	long limit;
 	int nlen;
 	u8 flags;
 
@@ -1299,19 +1296,6 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	nsize = skb_headlen(skb) - len;
 	if (nsize < 0)
 		nsize = 0;
-
-	/* tcp_sendmsg() can overshoot sk_wmem_queued by one full size skb.
-	 * We need some allowance to not penalize applications setting small
-	 * SO_SNDBUF values.
-	 * Also allow first and last skb in retransmit queue to be split.
-	 */
-	limit = sk->sk_sndbuf + 2 * SKB_TRUESIZE(GSO_MAX_SIZE);
-	if (unlikely((sk->sk_wmem_queued >> 1) > limit &&
-		     skb != tcp_rtx_queue_head(sk) &&
-		     skb != tcp_rtx_queue_tail(sk))) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPWQUEUETOOBIG);
-		return -ENOMEM;
-	}
 
 	if (skb_unclone(skb, gfp))
 		return -ENOMEM;
@@ -1495,7 +1479,8 @@ static inline int __tcp_mtu_to_mss(struct sock *sk, int pmtu)
 	mss_now -= icsk->icsk_ext_hdr_len;
 
 	/* Then reserve room for full set of TCP options and 8 bytes of data */
-	mss_now = max(mss_now, sock_net(sk)->ipv4.sysctl_tcp_min_snd_mss);
+	if (mss_now < 48)
+		mss_now = 48;
 	return mss_now;
 }
 
@@ -1657,8 +1642,7 @@ void tcp_cwnd_validate(struct sock *sk, bool is_cwnd_limited)
 	 * window, and remember whether we were cwnd-limited then.
 	 */
 	if (!before(tp->snd_una, tp->max_packets_seq) ||
-	    tp->packets_out > tp->max_packets_out ||
-	    is_cwnd_limited) {
+	    tp->packets_out > tp->max_packets_out) {
 		tp->max_packets_out = tp->packets_out;
 		tp->max_packets_seq = tp->snd_nxt;
 		tp->is_cwnd_limited = is_cwnd_limited;
@@ -2275,14 +2259,6 @@ bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		    unlikely(tso_fragment(sk, skb, limit, mss_now, gfp)))
 			break;
 
-		/* Argh, we hit an empty skb(), presumably a thread
-		 * is sleeping in sendmsg()/sk_stream_wait_memory().
-		 * We do not want to send a pure-ack packet and have
-		 * a strange looking rtx queue with empty packet(s).
-		 */
-		if (TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq)
-			break;
-
 		if (unlikely(tcp_transmit_skb(sk, skb, 1, gfp)))
 			break;
 
@@ -2299,15 +2275,6 @@ repair:
 			break;
 	}
 
-	is_cwnd_limited |= (tcp_packets_in_flight(tp) >= tp->snd_cwnd);
-	if (likely(sent_pkts || is_cwnd_limited))
-#ifdef CONFIG_MPTCP
-		if (tp->ops->cwnd_validate)
-			tp->ops->cwnd_validate(sk, is_cwnd_limited);
-#else
-		tcp_cwnd_validate(sk, is_cwnd_limited);
-#endif
-
 	if (likely(sent_pkts)) {
 		if (tcp_in_cwnd_reduction(sk))
 			tp->prr_out += sent_pkts;
@@ -2315,6 +2282,12 @@ repair:
 		/* Send one loss probe per tail loss episode. */
 		if (push_one != 2)
 			tcp_schedule_loss_probe(sk);
+#ifdef CONFIG_MPTCP
+		if (tp->ops->cwnd_validate)
+			tp->ops->cwnd_validate(sk, is_cwnd_limited);
+#else
+		tcp_cwnd_validate(sk, is_cwnd_limited);
+#endif
 		return false;
 	}
 	return (push_one == 2) || (!tp->packets_out && tcp_send_head(sk));
@@ -2415,16 +2388,13 @@ void tcp_send_loss_probe(struct sock *sk)
 		goto rearm_timer;
 	}
 
-	if (unlikely(!skb)) {
-		WARN_ONCE(tp->packets_out,
-			  "invalid inflight: %u state %u cwnd %u mss %d\n",
-			  tp->packets_out, sk->sk_state, tp->snd_cwnd, mss);
-		inet_csk(sk)->icsk_pending = 0;
-		return;
-	}
-
 	/* At most one outstanding TLP retransmission. */
 	if (tp->tlp_high_seq)
+		goto rearm_timer;
+
+	/* Retransmit last segment. */
+	skb = tcp_write_queue_tail(sk);
+	if (WARN_ON(!skb))
 		goto rearm_timer;
 
 	if (skb_still_in_host_queue(sk, skb))
@@ -2576,7 +2546,7 @@ u32 __tcp_select_window(struct sock *sk)
 	if (free_space < (full_space >> 1)) {
 		icsk->icsk_ack.quick = 0;
 
-		if (tcp_under_memory_pressure(sk))
+		if (sk_under_memory_pressure(sk))
 			tp->rcv_ssthresh = min(tp->rcv_ssthresh,
 					       4U * tp->advmss);
 
@@ -3036,7 +3006,7 @@ void tcp_send_fin(struct sock *sk)
 	 * Note: in the latter case, FIN packet will be sent after a timeout,
 	 * as TCP stack thinks it has already been transmitted.
 	 */
-	if (tskb && (tcp_send_head(sk) || tcp_under_memory_pressure(sk))) {
+	if (tskb && (tcp_send_head(sk) || sk_under_memory_pressure(sk))) {
 coalesce:
 		TCP_SKB_CB(tskb)->tcp_flags |= TCPHDR_FIN;
 		TCP_SKB_CB(tskb)->end_seq++;
@@ -3489,6 +3459,8 @@ void tcp_send_delayed_ack(struct sock *sk)
 	int ato = icsk->icsk_ack.ato;
 	unsigned long timeout;
 
+	tcp_ca_event(sk, CA_EVENT_DELAYED_ACK);
+
 	if (ato > TCP_DELACK_MIN) {
 		const struct tcp_sock *tp = tcp_sk(sk);
 		int max_ato = HZ / 2;
@@ -3544,6 +3516,8 @@ void __tcp_send_ack(struct sock *sk, u32 rcv_nxt)
 	/* If we have been reset, we may not send again. */
 	if (sk->sk_state == TCP_CLOSE)
 		return;
+
+	tcp_ca_event(sk, CA_EVENT_NON_DELAYED_ACK);
 
 	/* We are not putting this on the write queue, so
 	 * tcp_transmit_skb() will set the ownership to this

@@ -1,6 +1,7 @@
 #ifndef _ASM_X86_PLATFORM_H
 #define _ASM_X86_PLATFORM_H
 
+#include <asm/pgtable_types.h>
 #include <asm/bootparam.h>
 
 struct mpc_bus;

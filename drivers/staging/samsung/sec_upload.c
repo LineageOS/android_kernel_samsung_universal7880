@@ -44,12 +44,12 @@ struct crash_key user_crash_key_combination[] = {
 	{KEY_POWER, CRASH_COUNT_THIRD},
 };
 
-struct sec_key_state {
+struct key_state {
 	unsigned int key_code;
 	unsigned int state;
 };
 
-struct sec_key_state key_states[] = {
+struct key_state key_states[] = {
 	{KEY_VOLUMEDOWN, KEY_STATE_UP},
 	{KEY_VOLUMEUP, KEY_STATE_UP},
 	{KEY_POWER, KEY_STATE_UP},

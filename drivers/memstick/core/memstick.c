@@ -469,6 +469,7 @@ static void memstick_check(struct work_struct *work)
 			host->card = card;
 			if (device_register(&card->dev)) {
 				put_device(&card->dev);
+				kfree(host->card);
 				host->card = NULL;
 			}
 		} else
@@ -628,18 +629,13 @@ static int __init memstick_init(void)
 		return -ENOMEM;
 
 	rc = bus_register(&memstick_bus_type);
-	if (rc)
-		goto error_destroy_workqueue;
+	if (!rc)
+		rc = class_register(&memstick_host_class);
 
-	rc = class_register(&memstick_host_class);
-	if (rc)
-		goto error_bus_unregister;
+	if (!rc)
+		return 0;
 
-	return 0;
-
-error_bus_unregister:
 	bus_unregister(&memstick_bus_type);
-error_destroy_workqueue:
 	destroy_workqueue(workqueue);
 
 	return rc;

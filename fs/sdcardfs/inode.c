@@ -20,7 +20,6 @@
 
 #include "sdcardfs.h"
 #include <linux/fs_struct.h>
-#include <linux/ratelimit.h>
 
 const struct cred *override_fsids(struct sdcardfs_sb_info *sbi,
 		struct sdcardfs_inode_data *data)
@@ -143,7 +142,7 @@ static int sdcardfs_unlink(struct inode *dir, struct dentry *dentry)
 
 	/* save current_cred and override it */
 	saved_cred = override_fsids(SDCARDFS_SB(dir->i_sb),
-						SDCARDFS_I(dir)->data);
+					SDCARDFS_I(dir)->data);
 	if (!saved_cred)
 		return -ENOMEM;
 
@@ -205,7 +204,6 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	struct dentry *lower_dentry;
 	struct vfsmount *lower_mnt;
 	struct dentry *lower_parent_dentry = NULL;
-	struct dentry *parent_dentry = NULL;
 	struct path lower_path;
 	struct sdcardfs_sb_info *sbi = SDCARDFS_SB(dentry->d_sb);
 	const struct cred *saved_cred = NULL;
@@ -223,19 +221,16 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 
 	/* save current_cred and override it */
 	saved_cred = override_fsids(SDCARDFS_SB(dir->i_sb),
-						SDCARDFS_I(dir)->data);
+					SDCARDFS_I(dir)->data);
 	if (!saved_cred)
 		return -ENOMEM;
 
 	/* check disk space */
-	parent_dentry = dget_parent(dentry);
-	if (!check_min_free_space(parent_dentry, 0, 1)) {
+	if (!check_min_free_space(dentry, 0, 1)) {
 		pr_err("sdcardfs: No minimum free space.\n");
 		err = -ENOSPC;
-		dput(parent_dentry);
 		goto out_revert;
 	}
-	dput(parent_dentry);
 
 	/* the lower_dentry is negative here */
 	sdcardfs_get_lower_path(dentry, &lower_path);
@@ -355,7 +350,7 @@ static int sdcardfs_rmdir(struct inode *dir, struct dentry *dentry)
 
 	/* save current_cred and override it */
 	saved_cred = override_fsids(SDCARDFS_SB(dir->i_sb),
-						SDCARDFS_I(dir)->data);
+					SDCARDFS_I(dir)->data);
 	if (!saved_cred)
 		return -ENOMEM;
 
@@ -556,10 +551,14 @@ static int sdcardfs_permission(struct vfsmount *mnt, struct inode *inode, int ma
 	struct inode tmp;
 	struct sdcardfs_inode_data *top = top_data_get(SDCARDFS_I(inode));
 
-	if (IS_ERR(mnt))
-		return PTR_ERR(mnt);
 	if (!top)
 		return -EINVAL;
+
+	/* don't allow extended attribute */
+	if (IS_ERR(mnt)) {
+		data_put(top);
+		return PTR_ERR(mnt);
+	}
 
 	/*
 	 * Permission check on sdcardfs inode.
@@ -583,6 +582,7 @@ static int sdcardfs_permission(struct vfsmount *mnt, struct inode *inode, int ma
 		pr_warn("%s: This may be undefined behavior...\n", __func__);
 	err = generic_permission(&tmp, mask);
 	return err;
+
 }
 
 static int sdcardfs_setattr_wrn(struct dentry *dentry, struct iattr *ia)

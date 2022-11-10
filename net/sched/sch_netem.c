@@ -139,20 +139,33 @@ struct netem_sched_data {
 
 /* Time stamp put into socket buffer control block
  * Only valid when skbs are in our internal t(ime)fifo queue.
- *
- * As skb->rbnode uses same storage than skb->next, skb->prev and skb->tstamp,
- * and skb->next & skb->prev are scratch space for a qdisc,
- * we save skb->tstamp value in skb->cb[] before destroying it.
  */
 struct netem_skb_cb {
 	psched_time_t	time_to_send;
 	ktime_t		tstamp_save;
 };
 
+/* Because space in skb->cb[] is tight, netem overloads skb->next/prev/tstamp
+ * to hold a rb_node structure.
+ *
+ * If struct sk_buff layout is changed, the following checks will complain.
+ */
+static struct rb_node *netem_rb_node(struct sk_buff *skb)
+{
+	BUILD_BUG_ON(offsetof(struct sk_buff, next) != 0);
+	BUILD_BUG_ON(offsetof(struct sk_buff, prev) !=
+		     offsetof(struct sk_buff, next) + sizeof(skb->next));
+	BUILD_BUG_ON(offsetof(struct sk_buff, tstamp) !=
+		     offsetof(struct sk_buff, prev) + sizeof(skb->prev));
+	BUILD_BUG_ON(sizeof(struct rb_node) > sizeof(skb->next) +
+					      sizeof(skb->prev) +
+					      sizeof(skb->tstamp));
+	return (struct rb_node *)&skb->next;
+}
 
 static struct sk_buff *netem_rb_to_skb(struct rb_node *rb)
 {
-	return container_of(rb, struct sk_buff, rbnode);
+	return (struct sk_buff *)rb;
 }
 
 static inline struct netem_skb_cb *netem_skb_cb(struct sk_buff *skb)
@@ -390,8 +403,8 @@ static void tfifo_enqueue(struct sk_buff *nskb, struct Qdisc *sch)
 		else
 			p = &parent->rb_left;
 	}
-	rb_link_node(&nskb->rbnode, parent, p);
-	rb_insert_color(&nskb->rbnode, &q->t_root);
+	rb_link_node(netem_rb_node(nskb), parent, p);
+	rb_insert_color(netem_rb_node(nskb), &q->t_root);
 	sch->q.qlen++;
 }
 
@@ -464,7 +477,7 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	 * skb will be queued.
 	 */
 	if (count > 1 && (skb2 = skb_clone(skb, GFP_ATOMIC)) != NULL) {
-		struct Qdisc *rootq = qdisc_root_bh(sch);
+		struct Qdisc *rootq = qdisc_root(sch);
 		u32 dupsave = q->duplicate; /* prevent duplicating a dup... */
 		q->duplicate = 0;
 
@@ -652,14 +665,14 @@ deliver:
 #endif
 
 			if (q->qdisc) {
-				unsigned int pkt_len = qdisc_pkt_len(skb);
 				int err = qdisc_enqueue(skb, q->qdisc);
 
-				if (err != NET_XMIT_SUCCESS &&
-				    net_xmit_drop_count(err)) {
-					qdisc_qstats_drop(sch);
-					qdisc_tree_reduce_backlog(sch, 1,
-								  pkt_len);
+				if (unlikely(err != NET_XMIT_SUCCESS)) {
+					if (net_xmit_drop_count(err)) {
+						qdisc_qstats_drop(sch);
+						qdisc_tree_reduce_backlog(sch, 1,
+									  qdisc_pkt_len(skb));
+					}
 				}
 				goto tfifo_dequeue;
 			}
@@ -712,7 +725,7 @@ static int get_dist_table(struct Qdisc *sch, const struct nlattr *attr)
 	int i;
 	size_t s;
 
-	if (!n || n > NETEM_DIST_MAX)
+	if (n > NETEM_DIST_MAX)
 		return -EINVAL;
 
 	s = sizeof(struct disttable) + n * sizeof(s16);
@@ -945,10 +958,10 @@ static int netem_init(struct Qdisc *sch, struct nlattr *opt)
 	struct netem_sched_data *q = qdisc_priv(sch);
 	int ret;
 
-	qdisc_watchdog_init(&q->watchdog, sch);
-
 	if (!opt)
 		return -EINVAL;
+
+	qdisc_watchdog_init(&q->watchdog, sch);
 
 	q->loss_model = CLG_RANDOM;
 	ret = netem_change(sch, opt);

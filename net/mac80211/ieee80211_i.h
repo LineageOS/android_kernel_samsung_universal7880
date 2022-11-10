@@ -91,7 +91,6 @@ struct ieee80211_fragment_entry {
 	struct sk_buff_head skb_list;
 	int ccmp; /* Whether fragments were encrypted with CCMP */
 	u8 last_pn[6]; /* PN of the last fragment if CCMP was used */
-	unsigned int key_color;
 };
 
 
@@ -969,7 +968,6 @@ enum queue_stop_reason {
 	IEEE80211_QUEUE_STOP_REASON_OFFCHANNEL,
 	IEEE80211_QUEUE_STOP_REASON_FLUSH,
 	IEEE80211_QUEUE_STOP_REASON_TDLS_TEARDOWN,
-	IEEE80211_QUEUE_STOP_REASON_IFTYPE_CHANGE,
 
 	IEEE80211_QUEUE_STOP_REASONS,
 };

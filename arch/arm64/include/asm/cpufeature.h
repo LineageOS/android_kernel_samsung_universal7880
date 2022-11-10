@@ -39,10 +39,9 @@
 
 /* CPU feature register tracking */
 enum ftr_type {
-	FTR_EXACT,			/* Use a predefined safe value */
-	FTR_LOWER_SAFE,			/* Smaller value is safe */
-	FTR_HIGHER_SAFE,		/* Bigger value is safe */
-	FTR_HIGHER_OR_ZERO_SAFE,	/* Bigger value is safe, but 0 is biggest */
+	FTR_EXACT,	/* Use a predefined safe value */
+	FTR_LOWER_SAFE,	/* Smaller value is safe */
+	FTR_HIGHER_SAFE,/* Bigger value is safe */
 };
 
 #define FTR_STRICT	true	/* SANITY check strict matching required */
@@ -77,7 +76,7 @@ struct arm64_cpu_capabilities {
 	const char *desc;
 	u16 capability;
 	bool (*matches)(const struct arm64_cpu_capabilities *);
-	int (*enable)(void *);		/* Called on all active CPUs */
+	void (*enable)(void *);		/* Called on all active CPUs */
 	union {
 		struct {	/* To be used for erratum handling only */
 			u32 midr_model;
@@ -86,10 +85,9 @@ struct arm64_cpu_capabilities {
 
 		struct {	/* Feature register checking */
 			u32 sys_reg;
-			u8 field_pos;
-			u8 min_field_value;
-			u8 hwcap_type;
-			bool sign;
+			int field_pos;
+			int min_field_value;
+			int hwcap_type;
 			unsigned long hwcap;
 		};
 	};

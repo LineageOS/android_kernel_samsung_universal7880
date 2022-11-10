@@ -3202,23 +3202,6 @@ static inline const char *wiphy_name(const struct wiphy *wiphy)
 }
 
 /**
- * wiphy_new_nm - create a new wiphy for use with cfg80211
- *
- * @ops: The configuration operations for this device
- * @sizeof_priv: The size of the private area to allocate
- * @requested_name: Request a particular name.
- *	NULL is valid value, and means use the default phy%d naming.
- *
- * Create a new wiphy and associate the given operations with it.
- * @sizeof_priv bytes are allocated for private use.
- *
- * Return: A pointer to the new wiphy. This pointer must be
- * assigned to each netdev's ieee80211_ptr for proper operation.
- */
-struct wiphy *wiphy_new_nm(const struct cfg80211_ops *ops, int sizeof_priv,
-			   const char *requested_name);
-
-/**
  * wiphy_new - create a new wiphy for use with cfg80211
  *
  * @ops: The configuration operations for this device
@@ -3230,11 +3213,7 @@ struct wiphy *wiphy_new_nm(const struct cfg80211_ops *ops, int sizeof_priv,
  * Return: A pointer to the new wiphy. This pointer must be
  * assigned to each netdev's ieee80211_ptr for proper operation.
  */
-static inline struct wiphy *wiphy_new(const struct cfg80211_ops *ops,
-				      int sizeof_priv)
-{
-	return wiphy_new_nm(ops, sizeof_priv, NULL);
-}
+struct wiphy *wiphy_new(const struct cfg80211_ops *ops, int sizeof_priv);
 
 /**
  * wiphy_register - register a wiphy with cfg80211
@@ -3688,17 +3667,6 @@ const u8 *cfg80211_find_ie(u8 eid, const u8 *ies, int len);
  */
 const u8 *cfg80211_find_vendor_ie(unsigned int oui, u8 oui_type,
 				  const u8 *ies, int len);
-
-/**
- * cfg80211_send_layer2_update - send layer 2 update frame
- *
- * @dev: network device
- * @addr: STA MAC address
- *
- * Wireless drivers can use this function to update forwarding tables in bridge
- * devices upon STA association.
- */
-void cfg80211_send_layer2_update(struct net_device *dev, const u8 *addr);
 
 /**
  * DOC: Regulatory enforcement infrastructure

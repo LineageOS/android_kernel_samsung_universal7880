@@ -4,14 +4,15 @@
 #include <linux/percpu_counter.h>
 
 struct netns_frags {
-	/* sysctls */
-	int			timeout;
-	int			high_thresh;
-	int			low_thresh;
 	/* The percpu_counter "mem" need to be cacheline aligned.
 	 *  mem.count must not share cacheline with other writers
 	 */
 	struct percpu_counter   mem ____cacheline_aligned_in_smp;
+
+	/* sysctls */
+	int			timeout;
+	int			high_thresh;
+	int			low_thresh;
 };
 
 /**

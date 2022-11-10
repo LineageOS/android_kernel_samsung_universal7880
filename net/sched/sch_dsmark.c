@@ -197,13 +197,9 @@ static int dsmark_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	pr_debug("%s(skb %p,sch %p,[qdisc %p])\n", __func__, skb, sch, p);
 
 	if (p->set_tc_index) {
-		int wlen = skb_network_offset(skb);
-
 		switch (skb->protocol) {
 		case htons(ETH_P_IP):
-			wlen += sizeof(struct iphdr);
-			if (!pskb_may_pull(skb, wlen) ||
-			    skb_try_make_writable(skb, wlen))
+			if (skb_cow_head(skb, sizeof(struct iphdr)))
 				goto drop;
 
 			skb->tc_index = ipv4_get_dsfield(ip_hdr(skb))
@@ -211,9 +207,7 @@ static int dsmark_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 			break;
 
 		case htons(ETH_P_IPV6):
-			wlen += sizeof(struct ipv6hdr);
-			if (!pskb_may_pull(skb, wlen) ||
-			    skb_try_make_writable(skb, wlen))
+			if (skb_cow_head(skb, sizeof(struct ipv6hdr)))
 				goto drop;
 
 			skb->tc_index = ipv6_get_dsfield(ipv6_hdr(skb))
@@ -360,8 +354,6 @@ static int dsmark_init(struct Qdisc *sch, struct nlattr *opt)
 		goto errout;
 
 	err = -EINVAL;
-	if (!tb[TCA_DSMARK_INDICES])
-		goto errout;
 	indices = nla_get_u16(tb[TCA_DSMARK_INDICES]);
 
 	if (hweight32(indices) != 1)
@@ -402,8 +394,7 @@ static void dsmark_reset(struct Qdisc *sch)
 	struct dsmark_qdisc_data *p = qdisc_priv(sch);
 
 	pr_debug("%s(sch %p,[qdisc %p])\n", __func__, sch, p);
-	if (p->q)
-		qdisc_reset(p->q);
+	qdisc_reset(p->q);
 	sch->qstats.backlog = 0;
 	sch->q.qlen = 0;
 }

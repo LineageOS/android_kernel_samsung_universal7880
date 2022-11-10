@@ -278,7 +278,7 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
 	return -EINVAL;
 }
 
-struct ipoib_path *__path_find(struct net_device *dev, void *gid)
+static struct ipoib_path *__path_find(struct net_device *dev, void *gid)
 {
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
 	struct rb_node *n = priv->path_tree.rb_node;
@@ -624,8 +624,8 @@ static int path_rec_start(struct net_device *dev,
 	return 0;
 }
 
-static struct ipoib_neigh *neigh_add_path(struct sk_buff *skb, u8 *daddr,
-					  struct net_device *dev)
+static void neigh_add_path(struct sk_buff *skb, u8 *daddr,
+			   struct net_device *dev)
 {
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
 	struct ipoib_path *path;
@@ -638,15 +638,7 @@ static struct ipoib_neigh *neigh_add_path(struct sk_buff *skb, u8 *daddr,
 		spin_unlock_irqrestore(&priv->lock, flags);
 		++dev->stats.tx_dropped;
 		dev_kfree_skb_any(skb);
-		return NULL;
-	}
-
-	/* To avoid race condition, make sure that the
-	 * neigh will be added only once.
-	 */
-	if (unlikely(!list_empty(&neigh->list))) {
-		spin_unlock_irqrestore(&priv->lock, flags);
-		return neigh;
+		return;
 	}
 
 	path = __path_find(dev, daddr + 4);
@@ -682,7 +674,7 @@ static struct ipoib_neigh *neigh_add_path(struct sk_buff *skb, u8 *daddr,
 			spin_unlock_irqrestore(&priv->lock, flags);
 			ipoib_send(dev, skb, path->ah, IPOIB_QPN(daddr));
 			ipoib_neigh_put(neigh);
-			return NULL;
+			return;
 		}
 	} else {
 		neigh->ah  = NULL;
@@ -695,7 +687,7 @@ static struct ipoib_neigh *neigh_add_path(struct sk_buff *skb, u8 *daddr,
 
 	spin_unlock_irqrestore(&priv->lock, flags);
 	ipoib_neigh_put(neigh);
-	return NULL;
+	return;
 
 err_path:
 	ipoib_neigh_free(neigh);
@@ -705,8 +697,6 @@ err_drop:
 
 	spin_unlock_irqrestore(&priv->lock, flags);
 	ipoib_neigh_put(neigh);
-
-	return NULL;
 }
 
 static void unicast_arp_send(struct sk_buff *skb, struct net_device *dev,
@@ -803,9 +793,8 @@ static int ipoib_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	case htons(ETH_P_TIPC):
 		neigh = ipoib_neigh_get(dev, cb->hwaddr);
 		if (unlikely(!neigh)) {
-			neigh = neigh_add_path(skb, cb->hwaddr, dev);
-			if (likely(!neigh))
-				return NETDEV_TX_OK;
+			neigh_add_path(skb, cb->hwaddr, dev);
+			return NETDEV_TX_OK;
 		}
 		break;
 	case htons(ETH_P_ARP):
@@ -936,9 +925,7 @@ struct ipoib_neigh *ipoib_neigh_get(struct net_device *dev, u8 *daddr)
 				neigh = NULL;
 				goto out_unlock;
 			}
-
-			if (likely(skb_queue_len(&neigh->queue) < IPOIB_MAX_PATH_REC_QUEUE))
-				neigh->alive = jiffies;
+			neigh->alive = jiffies;
 			goto out_unlock;
 		}
 	}

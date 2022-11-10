@@ -29,7 +29,6 @@
 #include <linux/module.h>
 #include <linux/math64.h>
 #include <linux/vmalloc.h>
-#include <linux/nospec.h>
 
 #include <sound/core.h>
 #include <sound/control.h>
@@ -4130,16 +4129,15 @@ static int snd_hdsp_channel_info(struct snd_pcm_substream *substream,
 				    struct snd_pcm_channel_info *info)
 {
 	struct hdsp *hdsp = snd_pcm_substream_chip(substream);
-	unsigned int channel = info->channel;
+	int mapped_channel;
 
-	if (snd_BUG_ON(channel >= hdsp->max_channels))
-		return -EINVAL;
-	channel = array_index_nospec(channel, hdsp->max_channels);
-
-	if (hdsp->channel_map[channel] < 0)
+	if (snd_BUG_ON(info->channel >= hdsp->max_channels))
 		return -EINVAL;
 
-	info->offset = hdsp->channel_map[channel] * HDSP_CHANNEL_BUFFER_BYTES;
+	if ((mapped_channel = hdsp->channel_map[info->channel]) < 0)
+		return -EINVAL;
+
+	info->offset = mapped_channel * HDSP_CHANNEL_BUFFER_BYTES;
 	info->first = 0;
 	info->step = 32;
 	return 0;
@@ -5380,8 +5378,7 @@ static int snd_hdsp_free(struct hdsp *hdsp)
 	if (hdsp->port)
 		pci_release_regions(hdsp->pci);
 
-	if (pci_is_enabled(hdsp->pci))
-		pci_disable_device(hdsp->pci);
+	pci_disable_device(hdsp->pci);
 	return 0;
 }
 

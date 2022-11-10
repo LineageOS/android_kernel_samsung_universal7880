@@ -3533,16 +3533,6 @@ static void bnx2x_drv_info_iscsi_stat(struct bnx2x *bp)
  */
 static void bnx2x_config_mf_bw(struct bnx2x *bp)
 {
-	/* Workaround for MFW bug.
-	 * MFW is not supposed to generate BW attention in
-	 * single function mode.
-	 */
-	if (!IS_MF(bp)) {
-		DP(BNX2X_MSG_MCP,
-		   "Ignoring MF BW config in single function mode\n");
-		return;
-	}
-
 	if (bp->link_vars.link_up) {
 		bnx2x_cmng_fns_init(bp, true, CMNG_FNS_MINMAX);
 		bnx2x_link_sync_notify(bp);
@@ -9844,18 +9834,10 @@ static void bnx2x_recovery_failed(struct bnx2x *bp)
  */
 static void bnx2x_parity_recover(struct bnx2x *bp)
 {
+	bool global = false;
 	u32 error_recovered, error_unrecovered;
-	bool is_parity, global = false;
-#ifdef CONFIG_BNX2X_SRIOV
-	int vf_idx;
+	bool is_parity;
 
-	for (vf_idx = 0; vf_idx < bp->requested_nr_virtfn; vf_idx++) {
-		struct bnx2x_virtf *vf = BP_VF(bp, vf_idx);
-
-		if (vf)
-			vf->state = VF_LOST;
-	}
-#endif
 	DP(NETIF_MSG_HW, "Handling parity\n");
 	while (1) {
 		switch (bp->recovery_state) {
@@ -13235,7 +13217,7 @@ static int bnx2x_ptp_adjfreq(struct ptp_clock_info *ptp, s32 ppb)
 	if (!netif_running(bp->dev)) {
 		DP(BNX2X_MSG_PTP,
 		   "PTP adjfreq called while the interface is down\n");
-		return -ENETDOWN;
+		return -EFAULT;
 	}
 
 	if (ppb < 0) {
@@ -13295,12 +13277,6 @@ static int bnx2x_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 	struct bnx2x *bp = container_of(ptp, struct bnx2x, ptp_clock_info);
 	u64 now;
 
-	if (!netif_running(bp->dev)) {
-		DP(BNX2X_MSG_PTP,
-		   "PTP adjtime called while the interface is down\n");
-		return -ENETDOWN;
-	}
-
 	DP(BNX2X_MSG_PTP, "PTP adjtime called, delta = %llx\n", delta);
 
 	now = timecounter_read(&bp->timecounter);
@@ -13317,12 +13293,6 @@ static int bnx2x_ptp_gettime(struct ptp_clock_info *ptp, struct timespec *ts)
 	u64 ns;
 	u32 remainder;
 
-	if (!netif_running(bp->dev)) {
-		DP(BNX2X_MSG_PTP,
-		   "PTP gettime called while the interface is down\n");
-		return -ENETDOWN;
-	}
-
 	ns = timecounter_read(&bp->timecounter);
 
 	DP(BNX2X_MSG_PTP, "PTP gettime called, ns = %llu\n", ns);
@@ -13338,12 +13308,6 @@ static int bnx2x_ptp_settime(struct ptp_clock_info *ptp,
 {
 	struct bnx2x *bp = container_of(ptp, struct bnx2x, ptp_clock_info);
 	u64 ns;
-
-	if (!netif_running(bp->dev)) {
-		DP(BNX2X_MSG_PTP,
-		   "PTP settime called while the interface is down\n");
-		return -ENETDOWN;
-	}
 
 	ns = ts->tv_sec * 1000000000ULL;
 	ns += ts->tv_nsec;

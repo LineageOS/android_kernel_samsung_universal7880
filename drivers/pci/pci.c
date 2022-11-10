@@ -659,6 +659,19 @@ void pci_update_current_state(struct pci_dev *dev, pci_power_t state)
 }
 
 /**
+ * pci_power_up - Put the given device into D0 forcibly
+ * @dev: PCI device to power up
+ */
+void pci_power_up(struct pci_dev *dev)
+{
+	if (platform_pci_power_manageable(dev))
+		platform_pci_set_power_state(dev, PCI_D0);
+
+	pci_raw_set_power_state(dev, PCI_D0);
+	pci_update_current_state(dev, PCI_D0);
+}
+
+/**
  * pci_platform_power_transition - Use platform to change device power state
  * @dev: PCI device to handle.
  * @state: State to put the device into.
@@ -832,17 +845,6 @@ int pci_set_power_state(struct pci_dev *dev, pci_power_t state)
 	return error;
 }
 EXPORT_SYMBOL(pci_set_power_state);
-
-/**
- * pci_power_up - Put the given device into D0 forcibly
- * @dev: PCI device to power up
- */
-void pci_power_up(struct pci_dev *dev)
-{
-	__pci_start_power_transition(dev, PCI_D0);
-	pci_raw_set_power_state(dev, PCI_D0);
-	pci_update_current_state(dev, PCI_D0);
-}
 
 /**
  * pci_choose_state - Choose the power state of a PCI device
@@ -1688,13 +1690,6 @@ static void pci_pme_list_scan(struct work_struct *work)
 			 */
 			if (bridge && bridge->current_state != PCI_D0)
 				continue;
-			/*
-			 * If the device is in D3cold it should not be
-			 * polled either.
-			 */
-			if (pme_dev->dev->current_state == PCI_D3cold)
-				continue;
-
 			pci_pme_wakeup(pme_dev->dev, NULL);
 		} else {
 			list_del(&pme_dev->list);
@@ -4218,6 +4213,35 @@ int pci_select_bars(struct pci_dev *dev, unsigned long flags)
 	return bars;
 }
 EXPORT_SYMBOL(pci_select_bars);
+
+/**
+ * pci_resource_bar - get position of the BAR associated with a resource
+ * @dev: the PCI device
+ * @resno: the resource number
+ * @type: the BAR type to be filled in
+ *
+ * Returns BAR position in config space, or 0 if the BAR is invalid.
+ */
+int pci_resource_bar(struct pci_dev *dev, int resno, enum pci_bar_type *type)
+{
+	int reg;
+
+	if (resno < PCI_ROM_RESOURCE) {
+		*type = pci_bar_unknown;
+		return PCI_BASE_ADDRESS_0 + 4 * resno;
+	} else if (resno == PCI_ROM_RESOURCE) {
+		*type = pci_bar_mem32;
+		return dev->rom_base_reg;
+	} else if (resno < PCI_BRIDGE_RESOURCES) {
+		/* device specific resource */
+		reg = pci_iov_resource_bar(dev, resno, type);
+		if (reg)
+			return reg;
+	}
+
+	dev_err(&dev->dev, "BAR %d: invalid resource\n", resno);
+	return 0;
+}
 
 /* Some architectures require additional programming to enable VGA */
 static arch_set_vga_state_t arch_set_vga_state;

@@ -1460,21 +1460,6 @@ done:
 }
 EXPORT_SYMBOL(___pskb_trim);
 
-/* Note : use pskb_trim_rcsum() instead of calling this directly
- */
-int pskb_trim_rcsum_slow(struct sk_buff *skb, unsigned int len)
-{
-	if (skb->ip_summed == CHECKSUM_COMPLETE) {
-		int delta = skb->len - len;
-
-		skb->csum = csum_block_sub(skb->csum,
-					   skb_checksum(skb, len, delta, 0),
-					   len);
-	}
-	return __pskb_trim(skb, len);
-}
-EXPORT_SYMBOL(pskb_trim_rcsum_slow);
-
 /**
  *	__pskb_pull_tail - advance tail of skb header
  *	@skb: buffer to reallocate
@@ -2339,32 +2324,6 @@ void skb_queue_purge(struct sk_buff_head *list)
 EXPORT_SYMBOL(skb_queue_purge);
 
 /**
- *	skb_rbtree_purge - empty a skb rbtree
- *	@root: root of the rbtree to empty
- *	Return value: the sum of truesizes of all purged skbs.
- *
- *	Delete all buffers on an &sk_buff rbtree. Each buffer is removed from
- *	the list and one reference dropped. This function does not take
- *	any lock. Synchronization should be handled by the caller (e.g., TCP
- *	out-of-order queue is protected by the socket lock).
- */
-unsigned int skb_rbtree_purge(struct rb_root *root)
-{
-	struct rb_node *p = rb_first(root);
-	unsigned int sum = 0;
-
-	while (p) {
-		struct sk_buff *skb = rb_entry(p, struct sk_buff, rbnode);
-
-		p = rb_next(p);
-		rb_erase(&skb->rbnode, root);
-		sum += skb->truesize;
-		kfree_skb(skb);
-	}
-	return sum;
-}
-
-/**
  *	skb_queue_head - queue a buffer at the list head
  *	@list: list to use
  *	@newsk: buffer to queue
@@ -2540,8 +2499,7 @@ void skb_split(struct sk_buff *skb, struct sk_buff *skb1, const u32 len)
 {
 	int pos = skb_headlen(skb);
 
-	skb_shinfo(skb1)->tx_flags |= skb_shinfo(skb)->tx_flags &
-				      SKBTX_SHARED_FRAG;
+	skb_shinfo(skb1)->tx_flags = skb_shinfo(skb)->tx_flags & SKBTX_SHARED_FRAG;
 	if (len < pos)	/* Split line is inside header. */
 		skb_split_inside_header(skb, skb1, len, pos);
 	else		/* Second chunk has no header, nothing to copy. */
@@ -2555,19 +2513,7 @@ EXPORT_SYMBOL(skb_split);
  */
 static int skb_prepare_for_shift(struct sk_buff *skb)
 {
-	int ret = 0;
-
-	if (skb_cloned(skb)) {
-		/* Save and restore truesize: pskb_expand_head() may reallocate
-		 * memory where ksize(kmalloc(S)) != ksize(kmalloc(S)), but we
-		 * cannot change truesize at this point.
-		 */
-		unsigned int save_truesize = skb->truesize;
-
-		ret = pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
-		skb->truesize = save_truesize;
-	}
-	return ret;
+	return skb_cloned(skb) && pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
 }
 
 /**
@@ -3100,8 +3046,8 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
 		skb_copy_from_linear_data_offset(head_skb, offset,
 						 skb_put(nskb, hsize), hsize);
 
-		skb_shinfo(nskb)->tx_flags |= skb_shinfo(head_skb)->tx_flags &
-					      SKBTX_SHARED_FRAG;
+		skb_shinfo(nskb)->tx_flags = skb_shinfo(head_skb)->tx_flags &
+			SKBTX_SHARED_FRAG;
 
 		while (pos < offset + len) {
 			if (i >= nfrags) {
@@ -4219,8 +4165,8 @@ struct sk_buff *skb_vlan_untag(struct sk_buff *skb)
 	skb = skb_share_check(skb, GFP_ATOMIC);
 	if (unlikely(!skb))
 		goto err_free;
-	/* We may access the two bytes after vlan_hdr in vlan_set_encap_proto(). */
-	if (unlikely(!pskb_may_pull(skb, VLAN_HLEN + sizeof(unsigned short))))
+
+	if (unlikely(!pskb_may_pull(skb, VLAN_HLEN)))
 		goto err_free;
 
 	vhdr = (struct vlan_hdr *)skb->data;

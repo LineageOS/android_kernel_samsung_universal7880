@@ -281,7 +281,7 @@ static struct tegra_dma_desc *tegra_dma_desc_get(
 
 	/* Do not allocate if desc are waiting for ack */
 	list_for_each_entry(dma_desc, &tdc->free_dma_desc, node) {
-		if (async_tx_test_ack(&dma_desc->txd) && !dma_desc->cb_count) {
+		if (async_tx_test_ack(&dma_desc->txd)) {
 			list_del(&dma_desc->node);
 			spin_unlock_irqrestore(&tdc->lock, flags);
 			dma_desc->txd.flags = 0;
@@ -737,6 +737,10 @@ static void tegra_dma_terminate_all(struct dma_chan *dc)
 	bool was_busy;
 
 	spin_lock_irqsave(&tdc->lock, flags);
+	if (list_empty(&tdc->pending_sg_req)) {
+		spin_unlock_irqrestore(&tdc->lock, flags);
+		return;
+	}
 
 	if (!tdc->busy)
 		goto skip_dma_stop;
@@ -1214,7 +1218,8 @@ static void tegra_dma_free_chan_resources(struct dma_chan *dc)
 
 	dev_dbg(tdc2dev(tdc), "Freeing channel %d\n", tdc->id);
 
-	tegra_dma_terminate_all(dc);
+	if (tdc->busy)
+		tegra_dma_terminate_all(dc);
 
 	spin_lock_irqsave(&tdc->lock, flags);
 	list_splice_init(&tdc->pending_sg_req, &sg_req_list);

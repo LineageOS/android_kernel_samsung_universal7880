@@ -152,7 +152,7 @@ struct mei_msg_data {
 };
 
 /* Maximum number of processed FW status registers */
-#define MEI_FW_STATUS_MAX 6
+#define MEI_FW_STATUS_MAX 2
 
 /*
  * struct mei_fw_status - storage of FW status data

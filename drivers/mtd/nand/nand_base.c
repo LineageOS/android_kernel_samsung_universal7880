@@ -3791,6 +3791,7 @@ ident_done:
  * This is the first phase of the normal nand_scan() function. It reads the
  * flash ID and sets up MTD fields accordingly.
  *
+ * The mtd->owner field must be set to the module of the caller.
  */
 int nand_scan_ident(struct mtd_info *mtd, int maxchips,
 		    struct nand_flash_dev *table)
@@ -3798,9 +3799,6 @@ int nand_scan_ident(struct mtd_info *mtd, int maxchips,
 	int i, nand_maf_id, nand_dev_id;
 	struct nand_chip *chip = mtd->priv;
 	struct nand_flash_dev *type;
-
-	if (!mtd->name && mtd->dev.parent)
-		mtd->name = dev_name(mtd->dev.parent);
 
 	/* Set the default functions */
 	nand_set_defaults(chip, chip->options & NAND_BUSWIDTH_16);
@@ -4204,11 +4202,18 @@ EXPORT_SYMBOL(nand_scan_tail);
  *
  * This fills out all the uninitialized function pointers with the defaults.
  * The flash ID is read and the mtd/chip structures are filled with the
- * appropriate values.
+ * appropriate values. The mtd->owner field must be set to the module of the
+ * caller.
  */
 int nand_scan(struct mtd_info *mtd, int maxchips)
 {
 	int ret;
+
+	/* Many callers got this wrong, so check for it for a while... */
+	if (!mtd->owner && caller_is_module()) {
+		pr_crit("%s called with NULL mtd->owner!\n", __func__);
+		BUG();
+	}
 
 	ret = nand_scan_ident(mtd, maxchips, NULL);
 	if (!ret)
@@ -4218,13 +4223,17 @@ int nand_scan(struct mtd_info *mtd, int maxchips)
 EXPORT_SYMBOL(nand_scan);
 
 /**
- * nand_cleanup - [NAND Interface] Free resources held by the NAND device
- * @chip: NAND chip object
+ * nand_release - [NAND Interface] Free resources held by the NAND device
+ * @mtd: MTD device structure
  */
-void nand_cleanup(struct nand_chip *chip)
+void nand_release(struct mtd_info *mtd)
 {
+	struct nand_chip *chip = mtd->priv;
+
 	if (chip->ecc.mode == NAND_ECC_SOFT_BCH)
 		nand_bch_free((struct nand_bch_control *)chip->ecc.priv);
+
+	mtd_device_unregister(mtd);
 
 	/* Free bad block table memory */
 	kfree(chip->bbt);
@@ -4235,18 +4244,6 @@ void nand_cleanup(struct nand_chip *chip)
 	if (chip->badblock_pattern && chip->badblock_pattern->options
 			& NAND_BBT_DYNAMICSTRUCT)
 		kfree(chip->badblock_pattern);
-}
-EXPORT_SYMBOL_GPL(nand_cleanup);
-
-/**
- * nand_release - [NAND Interface] Unregister the MTD device and free resources
- *		  held by the NAND device
- * @mtd: MTD device structure
- */
-void nand_release(struct mtd_info *mtd)
-{
-	mtd_device_unregister(mtd);
-	nand_cleanup(mtd->priv);
 }
 EXPORT_SYMBOL_GPL(nand_release);
 
