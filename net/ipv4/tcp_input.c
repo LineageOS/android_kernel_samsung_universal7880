@@ -4360,10 +4360,7 @@ static void tcp_drop(struct sock *sk, struct sk_buff *skb)
 /* This one checks to see if we can put data from the
  * out_of_order queue into the receive_queue.
  */
-#ifndef CONFIG_MPTCP
-static
-#endif
-void tcp_ofo_queue(struct sock *sk)
+static void tcp_ofo_queue(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	__u32 dsack_high = tp->rcv_nxt;
@@ -4425,7 +4422,9 @@ void tcp_ofo_queue(struct sock *sk)
 	}
 }
 
+#ifndef CONFIG_MPTCP
 static bool tcp_prune_ofo_queue(struct sock *sk);
+#endif
 static int tcp_prune_queue(struct sock *sk);
 
 static int tcp_try_rmem_schedule(struct sock *sk, struct sk_buff *skb,
@@ -4443,7 +4442,11 @@ static int tcp_try_rmem_schedule(struct sock *sk, struct sk_buff *skb,
 			return -1;
 
 		if (!sk_rmem_schedule(sk, skb, size)) {
+#ifdef CONFIG_MPTCP
+			if (!tcp_sk(sk)->ops->prune_ofo_queue(sk))
+#else
 			if (!tcp_prune_ofo_queue(sk))
+#endif
 				return -1;
 
 			if (!sk_rmem_schedule(sk, skb, size))
@@ -4453,10 +4456,7 @@ static int tcp_try_rmem_schedule(struct sock *sk, struct sk_buff *skb,
 	return 0;
 }
 
-#ifndef CONFIG_MPTCP
-static
-#endif
-void tcp_data_queue_ofo(struct sock *sk, struct sk_buff *skb)
+static void tcp_data_queue_ofo(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct rb_node **p, *q, *parent;
@@ -5094,7 +5094,7 @@ static int tcp_prune_queue(struct sock *sk)
 	 * This must not ever occur. */
 
 #ifdef CONFIG_MPTCP
-	tcp_prune_ofo_queue(sk);
+	tp->ops->prune_ofo_queue(sk);
 #endif
 
 	if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf)

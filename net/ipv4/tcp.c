@@ -394,6 +394,7 @@ const struct tcp_sock_ops tcp_specific = {
 	.write_xmit			= tcp_write_xmit,
 	.send_active_reset		= tcp_send_active_reset,
 	.write_wakeup			= tcp_write_wakeup,
+	.prune_ofo_queue		= tcp_prune_ofo_queue,
 	.retransmit_timer		= tcp_retransmit_timer,
 	.time_wait			= tcp_time_wait,
 	.cleanup_rbuf			= tcp_cleanup_rbuf,
@@ -1127,6 +1128,11 @@ static inline int select_size(const struct sock *sk, bool sg)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	int tmp = tp->mss_cache;
+
+#ifdef CONFIG_MPTCP
+	if (mptcp(tp))
+		return mptcp_select_size(sk, sg);
+#endif
 
 	if (sg) {
 		if (sk_can_gso(sk)) {

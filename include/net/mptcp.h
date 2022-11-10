@@ -189,6 +189,10 @@ struct mptcp_tcp_sock {
 #define MPTCP_SCHED_SIZE 4
 	u8	mptcp_sched[MPTCP_SCHED_SIZE] __aligned(8);
 
+	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
+					     * skb in the ofo-queue.
+					     */
+
 	int	init_rcv_wnd;
 	u32	infinite_cutoff_seq;
 	struct delayed_work work;
@@ -768,6 +772,8 @@ void mptcp_write_space(struct sock *sk);
 
 void mptcp_add_meta_ofo_queue(const struct sock *meta_sk, struct sk_buff *skb,
 			      struct sock *sk);
+void mptcp_ofo_queue(struct sock *meta_sk);
+void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		   gfp_t flags);
@@ -811,7 +817,7 @@ void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 					__u8 *rcv_wscale, __u32 init_rcv_wnd,
 					const struct sock *sk);
 unsigned int mptcp_current_mss(struct sock *meta_sk);
-int mptcp_select_size(const struct sock *meta_sk, bool sg, bool first_skb);
+int mptcp_select_size(const struct sock *meta_sk, bool sg);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
@@ -858,6 +864,8 @@ int mptcp_check_req(struct sk_buff *skb, struct net *net);
 void mptcp_connect_init(struct sock *sk);
 void mptcp_sub_force_close(struct sock *sk);
 int mptcp_sub_len_remove_addr_align(u16 bitfield);
+void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
+			    const struct sk_buff *skb);
 void mptcp_init_buffer_space(struct sock *sk);
 void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req,
 			   struct sk_buff *skb);
@@ -1375,6 +1383,7 @@ static inline int is_master_tp(const struct tcp_sock *tp)
 {
 	return 0;
 }
+static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
 static inline void mptcp_update_metasocket(struct sock *sock, const struct sock *meta_sk) {}
 static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
