@@ -181,8 +181,9 @@ static int snd_usb_create_stream(struct snd_usb_audio *chip, int ctrlif, int int
 				ctrlif, interface);
 			return -EINVAL;
 		}
-		return usb_driver_claim_interface(&usb_audio_driver, iface,
-						  USB_AUDIO_IFACE_UNUSED);
+		usb_driver_claim_interface(&usb_audio_driver, iface, (void *)-1L);
+
+		return 0;
 	}
 
 	if ((altsd->bInterfaceClass != USB_CLASS_AUDIO &&
@@ -202,8 +203,8 @@ static int snd_usb_create_stream(struct snd_usb_audio *chip, int ctrlif, int int
 
 	if (! snd_usb_parse_audio_interface(chip, interface)) {
 		usb_set_interface(dev, interface, 0); /* reset the current interface */
-		return usb_driver_claim_interface(&usb_audio_driver, iface,
-						  USB_AUDIO_IFACE_UNUSED);
+		usb_driver_claim_interface(&usb_audio_driver, iface, (void *)-1L);
+		return -EINVAL;
 	}
 
 	return 0;
@@ -592,12 +593,9 @@ snd_usb_audio_probe(struct usb_device *dev,
 
  __error:
 	if (chip) {
-		/* chip->probing is inside the chip->card object,
-		 * reset before memory is possibly returned.
-		 */
-		chip->probing = 0;
 		if (!chip->num_interfaces)
 			snd_card_free(chip->card);
+		chip->probing = 0;
 	}
 	mutex_unlock(&register_mutex);
  __err_val:
@@ -615,7 +613,7 @@ static void snd_usb_audio_disconnect(struct usb_device *dev,
 	struct list_head *p;
 	bool was_shutdown;
 
-	if (chip == USB_AUDIO_IFACE_UNUSED)
+	if (chip == (void *)-1L)
 		return;
 
 	card = chip->card;
@@ -709,7 +707,7 @@ static int usb_audio_suspend(struct usb_interface *intf, pm_message_t message)
 	struct usb_mixer_interface *mixer;
 	struct list_head *p;
 
-	if (chip == USB_AUDIO_IFACE_UNUSED)
+	if (chip == (void *)-1L)
 		return 0;
 
 	if (!PMSG_IS_AUTO(message)) {
@@ -747,7 +745,7 @@ static int __usb_audio_resume(struct usb_interface *intf, bool reset_resume)
 	struct list_head *p;
 	int err = 0;
 
-	if (chip == USB_AUDIO_IFACE_UNUSED)
+	if (chip == (void *)-1L)
 		return 0;
 	if (--chip->num_suspended_intf)
 		return 0;

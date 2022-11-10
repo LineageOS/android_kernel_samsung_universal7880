@@ -1299,7 +1299,6 @@ static int __init omap_iommu_init(void)
 	struct kmem_cache *p;
 	const unsigned long flags = SLAB_HWCACHE_ALIGN;
 	size_t align = 1 << 10; /* L2 pagetable alignement */
-	int ret;
 
 	p = kmem_cache_create("iopte_cache", IOPTE_TABLE_SIZE, align, flags,
 			      iopte_cachep_ctor);
@@ -1307,23 +1306,9 @@ static int __init omap_iommu_init(void)
 		return -ENOMEM;
 	iopte_cachep = p;
 
-	ret = platform_driver_register(&omap_iommu_driver);
-	if (ret) {
-		pr_err("%s: failed to register driver\n", __func__);
-		goto fail_driver;
-	}
+	bus_set_iommu(&platform_bus_type, &omap_iommu_ops);
 
-	ret = bus_set_iommu(&platform_bus_type, &omap_iommu_ops);
-	if (ret)
-		goto fail_bus;
-
-	return 0;
-
-fail_bus:
-	platform_driver_unregister(&omap_iommu_driver);
-fail_driver:
-	kmem_cache_destroy(iopte_cachep);
-	return ret;
+	return platform_driver_register(&omap_iommu_driver);
 }
 /* must be ready before omap3isp is probed */
 subsys_initcall(omap_iommu_init);

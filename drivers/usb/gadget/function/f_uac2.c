@@ -598,6 +598,18 @@ static struct usb_gadget_strings *fn_strings[] = {
 	NULL,
 };
 
+static struct usb_qualifier_descriptor devqual_desc = {
+	.bLength = sizeof devqual_desc,
+	.bDescriptorType = USB_DT_DEVICE_QUALIFIER,
+
+	.bcdUSB = cpu_to_le16(0x200),
+	.bDeviceClass = USB_CLASS_MISC,
+	.bDeviceSubClass = 0x02,
+	.bDeviceProtocol = 0x01,
+	.bNumConfigurations = 1,
+	.bRESERVED = 0,
+};
+
 static struct usb_interface_assoc_descriptor iad_desc = {
 	.bLength = sizeof iad_desc,
 	.bDescriptorType = USB_DT_INTERFACE_ASSOCIATION,
@@ -1046,14 +1058,14 @@ afunc_bind(struct usb_configuration *cfg, struct usb_function *fn)
 	agdev->out_ep = usb_ep_autoconfig(gadget, &fs_epout_desc);
 	if (!agdev->out_ep) {
 		dev_err(dev, "%s:%d Error!\n", __func__, __LINE__);
-		return ret;
+		goto err;
 	}
 	agdev->out_ep->driver_data = agdev;
 
 	agdev->in_ep = usb_ep_autoconfig(gadget, &fs_epin_desc);
 	if (!agdev->in_ep) {
 		dev_err(dev, "%s:%d Error!\n", __func__, __LINE__);
-		return ret;
+		goto err;
 	}
 	agdev->in_ep->driver_data = agdev;
 
@@ -1067,7 +1079,7 @@ afunc_bind(struct usb_configuration *cfg, struct usb_function *fn)
 
 	ret = usb_assign_descriptors(fn, fs_audio_desc, hs_audio_desc, NULL);
 	if (ret)
-		return ret;
+		goto err;
 
 	prm = &agdev->uac2.c_prm;
 	prm->max_psize = hs_epout_desc.wMaxPacketSize;
@@ -1082,14 +1094,16 @@ afunc_bind(struct usb_configuration *cfg, struct usb_function *fn)
 	prm->rbuf = kzalloc(prm->max_psize * USB_XFERS, GFP_KERNEL);
 	if (!prm->rbuf) {
 		prm->max_psize = 0;
-		goto err;
+		goto err_free_descs;
 	}
 
 	ret = alsa_uac2_init(agdev);
 	if (ret)
-		goto err;
+		goto err_free_descs;
 	return 0;
 
+err_free_descs:
+	usb_free_all_descriptors(fn);
 err:
 	kfree(agdev->uac2.p_prm.rbuf);
 	kfree(agdev->uac2.c_prm.rbuf);
@@ -1097,8 +1111,6 @@ err:
 		agdev->in_ep->driver_data = NULL;
 	if (agdev->out_ep)
 		agdev->out_ep->driver_data = NULL;
-err_free_descs:
-	usb_free_all_descriptors(fn);
 	return -EINVAL;
 }
 
@@ -1260,7 +1272,6 @@ in_rq_cur(struct usb_function *fn, const struct usb_ctrlrequest *cr)
 
 	if (control_selector == UAC2_CS_CONTROL_SAM_FREQ) {
 		struct cntrl_cur_lay3 c;
-		memset(&c, 0, sizeof(struct cntrl_cur_lay3));
 
 		if (entity_id == USB_IN_CLK_ID)
 			c.dCUR = cpu_to_le32(p_srate);

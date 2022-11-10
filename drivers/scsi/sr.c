@@ -216,8 +216,6 @@ static unsigned int sr_get_events(struct scsi_device *sdev)
 		return DISK_EVENT_EJECT_REQUEST;
 	else if (med->media_event_code == 2)
 		return DISK_EVENT_MEDIA_CHANGE;
-	else if (med->media_event_code == 3)
-		return DISK_EVENT_EJECT_REQUEST;
 	return 0;
 }
 
@@ -522,26 +520,18 @@ static int sr_init_command(struct scsi_cmnd *SCpnt)
 static int sr_block_open(struct block_device *bdev, fmode_t mode)
 {
 	struct scsi_cd *cd;
-	struct scsi_device *sdev;
 	int ret = -ENXIO;
 
-	cd = scsi_cd_get(bdev->bd_disk);
-	if (!cd)
-		goto out;
-
-	sdev = cd->device;
-	scsi_autopm_get_device(sdev);
 	check_disk_change(bdev);
 
 	mutex_lock(&sr_mutex);
-	ret = cdrom_open(&cd->cdi, bdev, mode);
+	cd = scsi_cd_get(bdev->bd_disk);
+	if (cd) {
+		ret = cdrom_open(&cd->cdi, bdev, mode);
+		if (ret)
+			scsi_cd_put(cd);
+	}
 	mutex_unlock(&sr_mutex);
-
-	scsi_autopm_put_device(sdev);
-	if (ret)
-		scsi_cd_put(cd);
-
-out:
 	return ret;
 }
 
@@ -564,8 +554,6 @@ static int sr_block_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 
 	mutex_lock(&sr_mutex);
 
-	scsi_autopm_get_device(sdev);
-
 	/*
 	 * Send SCSI addressing ioctls directly to mid level, send other
 	 * ioctls to cdrom/block level.
@@ -574,12 +562,12 @@ static int sr_block_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 	case SCSI_IOCTL_GET_IDLUN:
 	case SCSI_IOCTL_GET_BUS_NUMBER:
 		ret = scsi_ioctl(sdev, cmd, argp);
-		goto put;
+		goto out;
 	}
 
 	ret = cdrom_ioctl(&cd->cdi, bdev, mode, cmd, arg);
 	if (ret != -ENOSYS)
-		goto put;
+		goto out;
 
 	/*
 	 * ENODEV means that we didn't recognise the ioctl, or that we
@@ -592,9 +580,6 @@ static int sr_block_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 	if (ret != -ENODEV)
 		goto out;
 	ret = scsi_ioctl(sdev, cmd, argp);
-
-put:
-	scsi_autopm_put_device(sdev);
 
 out:
 	mutex_unlock(&sr_mutex);
@@ -753,7 +738,7 @@ static int sr_probe(struct device *dev)
 	cd->cdi.disk = disk;
 
 	if (register_cdrom(&cd->cdi))
-		goto fail_minor;
+		goto fail_put;
 
 	/*
 	 * Initialize block layer runtime PM stuffs before the
@@ -771,10 +756,6 @@ static int sr_probe(struct device *dev)
 
 	return 0;
 
-fail_minor:
-	spin_lock(&sr_index_lock);
-	clear_bit(minor, sr_index_bits);
-	spin_unlock(&sr_index_lock);
 fail_put:
 	put_disk(disk);
 fail_free:

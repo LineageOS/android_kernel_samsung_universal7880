@@ -903,7 +903,6 @@ int nfs_release(struct inode *inode, struct file *filp)
 	nfs_file_clear_open_context(filp);
 	return 0;
 }
-EXPORT_SYMBOL_GPL(nfs_open);
 
 /*
  * This function is called whenever some part of NFS notices that
@@ -1361,12 +1360,12 @@ EXPORT_SYMBOL_GPL(_nfs_display_fhandle);
  */
 static int nfs_inode_attrs_need_update(const struct inode *inode, const struct nfs_fattr *fattr)
 {
-	unsigned long attr_gencount = NFS_I(inode)->attr_gencount;
+	const struct nfs_inode *nfsi = NFS_I(inode);
 
-	return ((long)fattr->gencount - attr_gencount) > 0 ||
+	return ((long)fattr->gencount - (long)nfsi->attr_gencount) > 0 ||
 		nfs_ctime_need_update(inode, fattr) ||
 		nfs_size_need_update(inode, fattr) ||
-		((long)attr_gencount - nfs_read_attr_generation_counter() > 0);
+		((long)nfsi->attr_gencount - (long)nfs_read_attr_generation_counter() > 0);
 }
 
 /*
@@ -1855,7 +1854,7 @@ static int nfsiod_start(void)
 {
 	struct workqueue_struct *wq;
 	dprintk("RPC:       creating workqueue nfsiod\n");
-	wq = alloc_workqueue("nfsiod", WQ_MEM_RECLAIM | WQ_UNBOUND, 0);
+	wq = alloc_workqueue("nfsiod", WQ_MEM_RECLAIM, 0);
 	if (wq == NULL)
 		return -ENOMEM;
 	nfsiod_workqueue = wq;

@@ -111,15 +111,28 @@ void check_and_switch_context(struct mm_struct *mm, unsigned int cpu);
 
 #define init_new_context(tsk,mm)	({ atomic64_set(&(mm)->context.id, 0); 0; })
 
+/*
+ * This is called when "tsk" is about to enter lazy TLB mode.
+ *
+ * mm:  describes the currently active mm context
+ * tsk: task which is entering lazy tlb
+ * cpu: cpu number which is entering lazy tlb
+ *
+ * tsk->mm will be NULL
+ */
+static inline void
+enter_lazy_tlb(struct mm_struct *mm, struct task_struct *tsk)
+{
+}
+
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
 static inline void update_saved_ttbr0(struct task_struct *tsk,
 				      struct mm_struct *mm)
 {
 	if (system_uses_ttbr0_pan()) {
-		u64 ttbr;
 		BUG_ON(mm->pgd == swapper_pg_dir);
-		ttbr = virt_to_phys(mm->pgd) | ASID(mm) << 48;
-		WRITE_ONCE(task_thread_info(tsk)->ttbr0, ttbr);
+		task_thread_info(tsk)->ttbr0 =
+			virt_to_phys(mm->pgd) | ASID(mm) << 48;
 	}
 }
 #else
@@ -128,16 +141,6 @@ static inline void update_saved_ttbr0(struct task_struct *tsk,
 {
 }
 #endif
-
-static inline void
-enter_lazy_tlb(struct mm_struct *mm, struct task_struct *tsk)
-{
-	/*
-	 * We don't actually care about the ttbr0 mapping, so point it at the
-	 * zero page.
-	 */
-	update_saved_ttbr0(tsk, &init_mm);
-}
 
 static inline void __switch_mm(struct mm_struct *next)
 {
@@ -175,7 +178,5 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 
 #define deactivate_mm(tsk,mm)	do { } while (0)
 #define activate_mm(prev,next)	switch_mm(prev, next, current)
-
-void post_ttbr_update_workaround(void);
 
 #endif

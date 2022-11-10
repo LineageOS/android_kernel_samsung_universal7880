@@ -392,7 +392,7 @@ static int pcf857x_probe(struct i2c_client *client,
 	 * reset state.  Otherwise it flags pins to be driven low.
 	 */
 	gpio->out = ~n_latch;
-	gpio->status = gpio->read(gpio->client);
+	gpio->status = gpio->out;
 
 	status = gpiochip_add(&gpio->chip);
 	if (status < 0)

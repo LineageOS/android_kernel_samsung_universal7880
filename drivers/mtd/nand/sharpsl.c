@@ -189,7 +189,7 @@ static int sharpsl_nand_probe(struct platform_device *pdev)
 	return 0;
 
 err_add:
-	nand_cleanup(this);
+	nand_release(&sharpsl->mtd);
 
 err_scan:
 	iounmap(sharpsl->io);

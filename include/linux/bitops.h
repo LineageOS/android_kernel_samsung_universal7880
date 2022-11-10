@@ -10,8 +10,7 @@
 #define BIT_ULL_MASK(nr)	(1ULL << ((nr) % BITS_PER_LONG_LONG))
 #define BIT_ULL_WORD(nr)	((nr) / BITS_PER_LONG_LONG)
 #define BITS_PER_BYTE		8
-#define BITS_PER_TYPE(type) (sizeof(type) * BITS_PER_BYTE)
-#define BITS_TO_LONGS(nr)	DIV_ROUND_UP(nr, BITS_PER_TYPE(long))
+#define BITS_TO_LONGS(nr)	DIV_ROUND_UP(nr, BITS_PER_BYTE * sizeof(long))
 #endif
 
 /*
@@ -20,11 +19,10 @@
  * GENMASK_ULL(39, 21) gives us the 64bit vector 0x000000ffffe00000.
  */
 #define GENMASK(h, l) \
-	(((~0UL) - (1UL << (l)) + 1) & (~0UL >> (BITS_PER_LONG - 1 - (h))))
+	(((~0UL) << (l)) & (~0UL >> (BITS_PER_LONG - 1 - (h))))
 
 #define GENMASK_ULL(h, l) \
-	(((~0ULL) - (1ULL << (l)) + 1) & \
-	 (~0ULL >> (BITS_PER_LONG_LONG - 1 - (h))))
+	(((~0ULL) << (l)) & (~0ULL >> (BITS_PER_LONG_LONG - 1 - (h))))
 
 extern unsigned int __sw_hweight8(unsigned int w);
 extern unsigned int __sw_hweight16(unsigned int w);
@@ -79,7 +77,7 @@ static __inline__ int get_count_order(unsigned int count)
 
 static inline unsigned long hweight_long(unsigned long w)
 {
-	return sizeof(w) == 4 ? hweight32(w) : hweight64((__u64)w);
+	return sizeof(w) == 4 ? hweight32(w) : hweight64(w);
 }
 
 /**
@@ -89,7 +87,7 @@ static inline unsigned long hweight_long(unsigned long w)
  */
 static inline __u64 rol64(__u64 word, unsigned int shift)
 {
-	return (word << (shift & 63)) | (word >> ((-shift) & 63));
+	return (word << shift) | (word >> (64 - shift));
 }
 
 /**
@@ -99,7 +97,7 @@ static inline __u64 rol64(__u64 word, unsigned int shift)
  */
 static inline __u64 ror64(__u64 word, unsigned int shift)
 {
-	return (word >> (shift & 63)) | (word << ((-shift) & 63));
+	return (word >> shift) | (word << (64 - shift));
 }
 
 /**
@@ -109,7 +107,7 @@ static inline __u64 ror64(__u64 word, unsigned int shift)
  */
 static inline __u32 rol32(__u32 word, unsigned int shift)
 {
-	return (word << (shift & 31)) | (word >> ((-shift) & 31));
+	return (word << shift) | (word >> (32 - shift));
 }
 
 /**
@@ -119,7 +117,7 @@ static inline __u32 rol32(__u32 word, unsigned int shift)
  */
 static inline __u32 ror32(__u32 word, unsigned int shift)
 {
-	return (word >> (shift & 31)) | (word << ((-shift) & 31));
+	return (word >> shift) | (word << (32 - shift));
 }
 
 /**
@@ -129,7 +127,7 @@ static inline __u32 ror32(__u32 word, unsigned int shift)
  */
 static inline __u16 rol16(__u16 word, unsigned int shift)
 {
-	return (word << (shift & 15)) | (word >> ((-shift) & 15));
+	return (word << shift) | (word >> (16 - shift));
 }
 
 /**
@@ -139,7 +137,7 @@ static inline __u16 rol16(__u16 word, unsigned int shift)
  */
 static inline __u16 ror16(__u16 word, unsigned int shift)
 {
-	return (word >> (shift & 15)) | (word << ((-shift) & 15));
+	return (word >> shift) | (word << (16 - shift));
 }
 
 /**
@@ -149,7 +147,7 @@ static inline __u16 ror16(__u16 word, unsigned int shift)
  */
 static inline __u8 rol8(__u8 word, unsigned int shift)
 {
-	return (word << (shift & 7)) | (word >> ((-shift) & 7));
+	return (word << shift) | (word >> (8 - shift));
 }
 
 /**
@@ -159,7 +157,7 @@ static inline __u8 rol8(__u8 word, unsigned int shift)
  */
 static inline __u8 ror8(__u8 word, unsigned int shift)
 {
-	return (word >> (shift & 7)) | (word << ((-shift) & 7));
+	return (word >> shift) | (word << (8 - shift));
 }
 
 /**

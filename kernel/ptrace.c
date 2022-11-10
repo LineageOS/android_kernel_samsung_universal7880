@@ -119,21 +119,6 @@ void __ptrace_unlink(struct task_struct *child)
 	spin_unlock(&child->sighand->siglock);
 }
 
-static bool looks_like_a_spurious_pid(struct task_struct *task)
-{
-	if (task->exit_code != ((PTRACE_EVENT_EXEC << 8) | SIGTRAP))
-		return false;
-
-	if (task_pid_vnr(task) == task->ptrace_message)
-		return false;
-	/*
-	 * The tracee changed its pid but the PTRACE_EVENT_EXEC event
-	 * was not wait()'ed, most probably debugger targets the old
-	 * leader which was destroyed in de_thread().
-	 */
-	return true;
-}
-
 /* Ensure that nothing can wake it up, even SIGKILL */
 static bool ptrace_freeze_traced(struct task_struct *task)
 {
@@ -144,8 +129,7 @@ static bool ptrace_freeze_traced(struct task_struct *task)
 		return ret;
 
 	spin_lock_irq(&task->sighand->siglock);
-	if (task_is_traced(task) && !looks_like_a_spurious_pid(task) &&
-	    !__fatal_signal_pending(task)) {
+	if (task_is_traced(task) && !__fatal_signal_pending(task)) {
 		task->state = __TASK_TRACED;
 		ret = true;
 	}
@@ -262,14 +246,6 @@ static bool ptrace_has_cap(const struct cred *tcred, unsigned int mode)
 static int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 {
 	const struct cred *cred = current_cred(), *tcred;
-	int dumpable = 0;
-	kuid_t caller_uid;
-	kgid_t caller_gid;
-
-	if (!(mode & PTRACE_MODE_FSCREDS) == !(mode & PTRACE_MODE_REALCREDS)) {
-		WARN(1, "denying ptrace access check without PTRACE_MODE_*CREDS\n");
-		return -EPERM;
-	}
 
 	/* May we inspect the given task?
 	 * This check is used both for attaching with ptrace
@@ -279,33 +255,18 @@ static int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 	 * because setting up the necessary parent/child relationship
 	 * or halting the specified task is impossible.
 	 */
-
+	int dumpable = 0;
 	/* Don't let security modules deny introspection */
 	if (same_thread_group(task, current))
 		return 0;
 	rcu_read_lock();
-	if (mode & PTRACE_MODE_FSCREDS) {
-		caller_uid = cred->fsuid;
-		caller_gid = cred->fsgid;
-	} else {
-		/*
-		 * Using the euid would make more sense here, but something
-		 * in userland might rely on the old behavior, and this
-		 * shouldn't be a security problem since
-		 * PTRACE_MODE_REALCREDS implies that the caller explicitly
-		 * used a syscall that requests access to another process
-		 * (and not a filesystem syscall to procfs).
-		 */
-		caller_uid = cred->uid;
-		caller_gid = cred->gid;
-	}
 	tcred = __task_cred(task);
-	if (uid_eq(caller_uid, tcred->euid) &&
-	    uid_eq(caller_uid, tcred->suid) &&
-	    uid_eq(caller_uid, tcred->uid)  &&
-	    gid_eq(caller_gid, tcred->egid) &&
-	    gid_eq(caller_gid, tcred->sgid) &&
-	    gid_eq(caller_gid, tcred->gid))
+	if (uid_eq(cred->uid, tcred->euid) &&
+	    uid_eq(cred->uid, tcred->suid) &&
+	    uid_eq(cred->uid, tcred->uid)  &&
+	    gid_eq(cred->gid, tcred->egid) &&
+	    gid_eq(cred->gid, tcred->sgid) &&
+	    gid_eq(cred->gid, tcred->gid))
 		goto ok;
 	if (ptrace_has_cap(tcred, mode))
 		goto ok;
@@ -372,7 +333,7 @@ static int ptrace_attach(struct task_struct *task, long request,
 		goto out;
 
 	task_lock(task);
-	retval = __ptrace_may_access(task, PTRACE_MODE_ATTACH_REALCREDS);
+	retval = __ptrace_may_access(task, PTRACE_MODE_ATTACH);
 	task_unlock(task);
 	if (retval)
 		goto unlock_creds;
@@ -701,10 +662,6 @@ static int ptrace_peek_siginfo(struct task_struct *child,
 	if (arg.nr < 0)
 		return -EINVAL;
 
-	/* Ensure arg.off fits in an unsigned long */
-	if (arg.off > ULONG_MAX)
-		return 0;
-
 	if (arg.flags & PTRACE_PEEKSIGINFO_SHARED)
 		pending = &child->signal->shared_pending;
 	else
@@ -712,8 +669,7 @@ static int ptrace_peek_siginfo(struct task_struct *child,
 
 	for (i = 0; i < arg.nr; ) {
 		siginfo_t info;
-		unsigned long off = arg.off + i;
-		bool found = false;
+		s32 off = arg.off + i;
 
 		spin_lock_irq(&child->sighand->siglock);
 		list_for_each_entry(q, &pending->list, list) {
@@ -724,7 +680,7 @@ static int ptrace_peek_siginfo(struct task_struct *child,
 		}
 		spin_unlock_irq(&child->sighand->siglock);
 
-		if (!found) /* beyond the end of the list */
+		if (off >= 0) /* beyond the end of the list */
 			break;
 
 #ifdef CONFIG_COMPAT

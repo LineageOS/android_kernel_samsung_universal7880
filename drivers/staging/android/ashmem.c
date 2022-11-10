@@ -365,8 +365,8 @@ static int ashmem_vmfile_mmap(struct file *file, struct vm_area_struct *vma)
 
 static unsigned long
 ashmem_vmfile_get_unmapped_area(struct file *file, unsigned long addr,
-				unsigned long len, unsigned long pgoff,
-				unsigned long flags)
+			unsigned long len, unsigned long pgoff,
+			unsigned long flags)
 {
 	return current->mm->get_unmapped_area(file, addr, len, pgoff, flags);
 }
@@ -731,29 +731,29 @@ static int ashmem_pin_unpin(struct ashmem_area *asma, unsigned long cmd,
 	size_t pgstart, pgend;
 	int ret = -EINVAL;
 
+	if (unlikely(!asma->file))
+		return -EINVAL;
+
 	if (unlikely(copy_from_user(&pin, p, sizeof(pin))))
 		return -EFAULT;
-
-	mutex_lock(&ashmem_mutex);
-
-	if (unlikely(!asma->file))
-		goto out_unlock;
 
 	/* per custom, you can pass zero for len to mean "everything onward" */
 	if (!pin.len)
 		pin.len = PAGE_ALIGN(asma->size) - pin.offset;
 
 	if (unlikely((pin.offset | pin.len) & ~PAGE_MASK))
-		goto out_unlock;
+		return -EINVAL;
 
 	if (unlikely(((__u32) -1) - pin.offset < pin.len))
-		goto out_unlock;
+		return -EINVAL;
 
 	if (unlikely(PAGE_ALIGN(asma->size) < pin.offset + pin.len))
-		goto out_unlock;
+		return -EINVAL;
 
 	pgstart = pin.offset / PAGE_SIZE;
 	pgend = pgstart + (pin.len / PAGE_SIZE) - 1;
+
+	mutex_lock(&ashmem_mutex);
 
 	switch (cmd) {
 	case ASHMEM_PIN:
@@ -767,7 +767,6 @@ static int ashmem_pin_unpin(struct ashmem_area *asma, unsigned long cmd,
 		break;
 	}
 
-out_unlock:
 	mutex_unlock(&ashmem_mutex);
 
 	return ret;

@@ -778,7 +778,7 @@ static int getoptions(char *c, struct trusted_key_payload *pay,
 		case Opt_migratable:
 			if (*args[0].from == '0')
 				pay->migratable = 0;
-			else if (*args[0].from != '1')
+			else
 				return -EINVAL;
 			break;
 		case Opt_pcrlock:
@@ -990,7 +990,7 @@ static int trusted_update(struct key *key, struct key_preparsed_payload *prep)
 	char *datablob;
 	int ret = 0;
 
-	if (key_is_negative(key))
+	if (test_bit(KEY_FLAG_NEGATIVE, &key->flags))
 		return -ENOKEY;
 	p = key->payload.data;
 	if (!p->migratable)

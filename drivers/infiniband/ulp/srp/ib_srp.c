@@ -600,18 +600,11 @@ static void srp_path_rec_completion(int status,
 
 static int srp_lookup_path(struct srp_target_port *target)
 {
-	int ret = -ENODEV;
+	int ret;
 
 	target->path.numb_path = 1;
 
 	init_completion(&target->done);
-
-	/*
-	 * Avoid that the SCSI host can be removed by srp_remove_target()
-	 * before srp_path_rec_completion() is called.
-	 */
-	if (!scsi_host_get(target->scsi_host))
-		goto out;
 
 	target->path_query_id = ib_sa_path_rec_get(&srp_sa_client,
 						   target->srp_host->srp_dev->dev,
@@ -626,24 +619,18 @@ static int srp_lookup_path(struct srp_target_port *target)
 						   GFP_KERNEL,
 						   srp_path_rec_completion,
 						   target, &target->path_query);
-	ret = target->path_query_id;
-	if (ret < 0)
-		goto put;
+	if (target->path_query_id < 0)
+		return target->path_query_id;
 
 	ret = wait_for_completion_interruptible(&target->done);
 	if (ret < 0)
-		goto put;
+		return ret;
 
-	ret = target->status < 0;
-	if (ret < 0)
+	if (target->status < 0)
 		shost_printk(KERN_WARNING, target->scsi_host,
 			     PFX "Path record query failed\n");
 
-put:
-	scsi_host_put(target->scsi_host);
-
-out:
-	return ret;
+	return target->status;
 }
 
 static int srp_send_req(struct srp_target_port *target)
@@ -1932,7 +1919,6 @@ static int srp_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *scmnd)
 
 	if (srp_post_send(target, iu, len)) {
 		shost_printk(KERN_ERR, target->scsi_host, PFX "Send failed\n");
-		scmnd->result = DID_ERROR << 16;
 		goto err_unmap;
 	}
 
@@ -2396,11 +2382,9 @@ static int srp_abort(struct scsi_cmnd *scmnd)
 		ret = FAST_IO_FAIL;
 	else
 		ret = FAILED;
-	if (ret == SUCCESS) {
-		srp_free_req(target, req, scmnd, 0);
-		scmnd->result = DID_ABORT << 16;
-		scmnd->scsi_done(scmnd);
-	}
+	srp_free_req(target, req, scmnd, 0);
+	scmnd->result = DID_ABORT << 16;
+	scmnd->scsi_done(scmnd);
 
 	return ret;
 }
@@ -2408,6 +2392,7 @@ static int srp_abort(struct scsi_cmnd *scmnd)
 static int srp_reset_device(struct scsi_cmnd *scmnd)
 {
 	struct srp_target_port *target = host_to_target(scmnd->device->host);
+	int i;
 
 	shost_printk(KERN_ERR, target->scsi_host, "SRP reset_device called\n");
 
@@ -2416,6 +2401,11 @@ static int srp_reset_device(struct scsi_cmnd *scmnd)
 		return FAILED;
 	if (target->tsk_mgmt_status)
 		return FAILED;
+
+	for (i = 0; i < target->req_ring_size; ++i) {
+		struct srp_request *req = &target->req_ring[i];
+		srp_finish_req(target, req, scmnd->device, DID_RESET << 16);
+	}
 
 	return SUCCESS;
 }

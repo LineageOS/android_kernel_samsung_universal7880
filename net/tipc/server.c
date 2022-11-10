@@ -414,11 +414,6 @@ int tipc_conn_sendmsg(struct tipc_server *s, int conid,
 	if (!con)
 		return -EINVAL;
 
-	if (!test_bit(CF_CONNECTED, &con->flags)) {
-		conn_put(con);
-		return 0;
-	}
-
 	e = tipc_alloc_entry(data, len);
 	if (!e) {
 		conn_put(con);
@@ -432,8 +427,12 @@ int tipc_conn_sendmsg(struct tipc_server *s, int conid,
 	list_add_tail(&e->list, &con->outqueue);
 	spin_unlock_bh(&con->outqueue_lock);
 
-	if (!queue_work(s->send_wq, &con->swork))
+	if (test_bit(CF_CONNECTED, &con->flags)) {
+		if (!queue_work(s->send_wq, &con->swork))
+			conn_put(con);
+	} else {
 		conn_put(con);
+	}
 	return 0;
 }
 
@@ -457,7 +456,7 @@ static void tipc_send_to_sock(struct tipc_conn *con)
 	int ret;
 
 	spin_lock_bh(&con->outqueue_lock);
-	while (test_bit(CF_CONNECTED, &con->flags)) {
+	while (1) {
 		e = list_entry(con->outqueue.next, struct outqueue_entry,
 			       list);
 		if ((struct list_head *) e == &con->outqueue)

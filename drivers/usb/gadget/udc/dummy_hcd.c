@@ -50,7 +50,6 @@
 #define DRIVER_VERSION	"02 May 2005"
 
 #define POWER_BUDGET	500	/* in mA; use 8 for low-power port testing */
-#define POWER_BUDGET_3	900	/* in mA */
 
 static const char	driver_name[] = "dummy_hcd";
 static const char	driver_desc[] = "USB Host+Gadget Emulator";
@@ -192,13 +191,11 @@ struct dummy {
 	 */
 	struct dummy_ep			ep[DUMMY_ENDPOINTS];
 	int				address;
-	int				callback_usage;
 	struct usb_gadget		gadget;
 	struct usb_gadget_driver	*driver;
 	struct dummy_request		fifo_req;
 	u8				fifo_buf[FIFO_SIZE];
 	u16				devstatus;
-	unsigned			ints_enabled:1;
 	unsigned			udc_suspended:1;
 	unsigned			pullup:1;
 
@@ -271,7 +268,7 @@ static void nuke(struct dummy *dum, struct dummy_ep *ep)
 /* caller must hold lock */
 static void stop_activity(struct dummy *dum)
 {
-	int i;
+	struct dummy_ep	*ep;
 
 	/* prevent any more requests */
 	dum->address = 0;
@@ -279,8 +276,8 @@ static void stop_activity(struct dummy *dum)
 	/* The timer is left running so that outstanding URBs can fail */
 
 	/* nuke any pending requests first, so driver i/o is quiesced */
-	for (i = 0; i < DUMMY_ENDPOINTS; ++i)
-		nuke(dum, &dum->ep[i]);
+	list_for_each_entry(ep, &dum->gadget.ep_list, ep.ep_list)
+		nuke(dum, ep);
 
 	/* driver now does any non-usb quiescing necessary */
 }
@@ -380,24 +377,22 @@ static void set_link_state(struct dummy_hcd *dum_hcd)
 		 */
 		if ((dum_hcd->old_status & USB_PORT_STAT_CONNECTION) != 0 &&
 		    (dum_hcd->old_status & USB_PORT_STAT_RESET) == 0 &&
-		    dum->ints_enabled) {
+		    dum->driver) {
 			stop_activity(dum);
-			++dum->callback_usage;
 			spin_unlock(&dum->lock);
 			dum->driver->disconnect(&dum->gadget);
 			spin_lock(&dum->lock);
-			--dum->callback_usage;
 		}
-	} else if (dum_hcd->active != dum_hcd->old_active &&
-			dum->ints_enabled) {
-		++dum->callback_usage;
-		spin_unlock(&dum->lock);
-		if (dum_hcd->old_active && dum->driver->suspend)
+	} else if (dum_hcd->active != dum_hcd->old_active) {
+		if (dum_hcd->old_active && dum->driver->suspend) {
+			spin_unlock(&dum->lock);
 			dum->driver->suspend(&dum->gadget);
-		else if (!dum_hcd->old_active &&  dum->driver->resume)
+			spin_lock(&dum->lock);
+		} else if (!dum_hcd->old_active &&  dum->driver->resume) {
+			spin_unlock(&dum->lock);
 			dum->driver->resume(&dum->gadget);
-		spin_lock(&dum->lock);
-		--dum->callback_usage;
+			spin_lock(&dum->lock);
+		}
 	}
 
 	dum_hcd->old_status = dum_hcd->port_status;
@@ -849,21 +844,6 @@ static int dummy_pullup(struct usb_gadget *_gadget, int value)
 	spin_lock_irqsave(&dum->lock, flags);
 	dum->pullup = (value != 0);
 	set_link_state(dum_hcd);
-	if (value == 0) {
-		/*
-		 * Emulate synchronize_irq(): wait for callbacks to finish.
-		 * This seems to be the best place to emulate the call to
-		 * synchronize_irq() that's in usb_gadget_remove_driver().
-		 * Doing it in dummy_udc_stop() would be too late since it
-		 * is called after the unbind callback and unbind shouldn't
-		 * be invoked until all the other callbacks are finished.
-		 */
-		while (dum->callback_usage > 0) {
-			spin_unlock_irqrestore(&dum->lock, flags);
-			usleep_range(1000, 2000);
-			spin_lock_irqsave(&dum->lock, flags);
-		}
-	}
 	spin_unlock_irqrestore(&dum->lock, flags);
 
 	usb_hcd_poll_rh_status(dummy_hcd_to_hcd(dum_hcd));
@@ -928,10 +908,7 @@ static int dummy_udc_start(struct usb_gadget *g,
 	 * can't enumerate without help from the driver we're binding.
 	 */
 
-	spin_lock_irq(&dum->lock);
 	dum->devstatus = 0;
-	dum->ints_enabled = 1;
-	spin_unlock_irq(&dum->lock);
 
 	dum->driver = driver;
 	dev_dbg(udc_dev(dum), "binding gadget driver '%s'\n",
@@ -949,11 +926,7 @@ static int dummy_udc_stop(struct usb_gadget *g,
 		dev_dbg(udc_dev(dum), "unregister gadget driver '%s'\n",
 				driver->driver.name);
 
-	spin_lock_irq(&dum->lock);
-	dum->ints_enabled = 0;
-	stop_activity(dum);
 	dum->driver = NULL;
-	spin_unlock_irq(&dum->lock);
 
 	return 0;
 }
@@ -1483,8 +1456,6 @@ static struct dummy_ep *find_endpoint(struct dummy *dum, u8 address)
 	if (!is_active((dum->gadget.speed == USB_SPEED_SUPER ?
 			dum->ss_hcd : dum->hs_hcd)))
 		return NULL;
-	if (!dum->ints_enabled)
-		return NULL;
 	if ((address & ~USB_DIR_IN) == 0)
 		return &dum->ep[0];
 	for (i = 1; i < DUMMY_ENDPOINTS; i++) {
@@ -1826,12 +1797,10 @@ restart:
 			 * until setup() returns; no reentrancy issues etc.
 			 */
 			if (value > 0) {
-				++dum->callback_usage;
 				spin_unlock(&dum->lock);
 				value = dum->driver->setup(&dum->gadget,
 						&setup);
 				spin_lock(&dum->lock);
-				--dum->callback_usage;
 
 				if (value >= 0) {
 					/* no delays (max 64KB data stage) */
@@ -2362,7 +2331,7 @@ static int dummy_start_ss(struct dummy_hcd *dum_hcd)
 	dum_hcd->rh_state = DUMMY_RH_RUNNING;
 	dum_hcd->stream_en_ep = 0;
 	INIT_LIST_HEAD(&dum_hcd->urbp_list);
-	dummy_hcd_to_hcd(dum_hcd)->power_budget = POWER_BUDGET_3;
+	dummy_hcd_to_hcd(dum_hcd)->power_budget = POWER_BUDGET;
 	dummy_hcd_to_hcd(dum_hcd)->state = HC_STATE_RUNNING;
 	dummy_hcd_to_hcd(dum_hcd)->uses_new_polling = 1;
 #ifdef CONFIG_USB_OTG
@@ -2669,7 +2638,7 @@ static int __init init(void)
 {
 	int	retval = -ENOMEM;
 	int	i;
-	struct	dummy *dum[MAX_NUM_UDC] = {};
+	struct	dummy *dum[MAX_NUM_UDC];
 
 	if (usb_disabled())
 		return -ENODEV;

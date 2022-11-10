@@ -588,8 +588,7 @@ static int nfs_read_done(struct rpc_task *task, struct nfs_pgio_header *hdr)
 		/* Emulate the eof flag, which isn't normally needed in NFSv2
 		 * as it is guaranteed to always return the file attributes
 		 */
-		if ((hdr->res.count == 0 && hdr->args.count > 0) ||
-		    hdr->args.offset + hdr->res.count >= hdr->res.fattr->size)
+		if (hdr->args.offset + hdr->res.count >= hdr->res.fattr->size)
 			hdr->res.eof = 1;
 	}
 	return 0;
@@ -612,10 +611,8 @@ static int nfs_write_done(struct rpc_task *task, struct nfs_pgio_header *hdr)
 {
 	struct inode *inode = hdr->inode;
 
-	if (task->tk_status >= 0) {
-		hdr->res.count = hdr->args.count;
+	if (task->tk_status >= 0)
 		nfs_post_op_update_inode_force_wcc(inode, hdr->res.fattr);
-	}
 	return 0;
 }
 

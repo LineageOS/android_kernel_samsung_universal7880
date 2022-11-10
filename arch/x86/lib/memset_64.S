@@ -148,7 +148,7 @@ ENDPROC(__memset)
 	 */
 	.section .altinstructions,"a"
 	altinstruction_entry memset,.Lmemset_c,X86_FEATURE_REP_GOOD,\
-			     .Lfinal-memset,.Lmemset_e-.Lmemset_c,0
+			     .Lfinal-memset,.Lmemset_e-.Lmemset_c
 	altinstruction_entry memset,.Lmemset_c_e,X86_FEATURE_ERMS, \
-			     .Lfinal-memset,.Lmemset_e_e-.Lmemset_c_e,0
+			     .Lfinal-memset,.Lmemset_e_e-.Lmemset_c_e
 	.previous

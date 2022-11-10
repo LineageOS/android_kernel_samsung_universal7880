@@ -156,8 +156,6 @@ static int xfrm_output_gso(struct sk_buff *skb)
 {
 	struct sk_buff *segs;
 
-	BUILD_BUG_ON(sizeof(*IPCB(skb)) > SKB_SGO_CB_OFFSET);
-	BUILD_BUG_ON(sizeof(*IP6CB(skb)) > SKB_SGO_CB_OFFSET);
 	segs = skb_gso_segment(skb, 0);
 	kfree_skb(skb);
 	if (IS_ERR(segs))
@@ -226,8 +224,7 @@ void xfrm_local_error(struct sk_buff *skb, int mtu)
 
 	if (skb->protocol == htons(ETH_P_IP))
 		proto = AF_INET;
-	else if (skb->protocol == htons(ETH_P_IPV6) &&
-		 skb->sk->sk_family == AF_INET6)
+	else if (skb->protocol == htons(ETH_P_IPV6))
 		proto = AF_INET6;
 	else
 		return;

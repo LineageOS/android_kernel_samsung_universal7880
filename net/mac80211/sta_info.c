@@ -2,7 +2,6 @@
  * Copyright 2002-2005, Instant802 Networks, Inc.
  * Copyright 2006-2007	Jiri Benc <jbenc@suse.cz>
  * Copyright 2013-2014  Intel Mobile Communications GmbH
- * Copyright (C) 2018-2020 Intel Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -233,24 +232,6 @@ void sta_info_free(struct ieee80211_local *local, struct sta_info *sta)
 {
 	int i;
 
-	/*
-	 * If we had used sta_info_pre_move_state() then we might not
-	 * have gone through the state transitions down again, so do
-	 * it here now (and warn if it's inserted).
-	 *
-	 * This will clear state such as fast TX/RX that may have been
-	 * allocated during state transitions.
-	 */
-	while (sta->sta_state > IEEE80211_STA_NONE) {
-		int ret;
-
-		WARN_ON_ONCE(test_sta_flag(sta, WLAN_STA_INSERTED));
-
-		ret = sta_info_move_state(sta, sta->sta_state - 1);
-		if (WARN_ONCE(ret, "sta_info_move_state() returned %d\n", ret))
-			break;
-	}
-
 	if (sta->rate_ctrl)
 		rate_control_free_sta(sta);
 
@@ -364,9 +345,6 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 #endif
 
 	memcpy(sta->sta.addr, addr, ETH_ALEN);
-	sta->sta.max_rx_aggregation_subframes =
-		local->hw.max_rx_aggregation_subframes;
-
 	sta->local = local;
 	sta->sdata = sdata;
 	sta->last_rx = jiffies;
@@ -439,7 +417,6 @@ free:
 
 static int sta_info_insert_check(struct sta_info *sta)
 {
-	struct ieee80211_local *local = sta->local;
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
 
 	/*
@@ -453,19 +430,6 @@ static int sta_info_insert_check(struct sta_info *sta)
 	if (WARN_ON(ether_addr_equal(sta->sta.addr, sdata->vif.addr) ||
 		    is_multicast_ether_addr(sta->sta.addr)))
 		return -EINVAL;
-
-	/* Strictly speaking this isn't necessary as we hold the mutex, but
-	 * the rhashtable code can't really deal with that distinction. We
-	 * do require the mutex for correctness though.
-	 */
-	rcu_read_lock();
-	lockdep_assert_held(&sdata->local->sta_mtx);
-	if (local->hw.flags & IEEE80211_HW_NEEDS_UNIQUE_STA_ADDR &&
-	    ieee80211_find_sta_by_ifaddr(&sdata->local->hw, sta->sta.addr, NULL)) {
-		rcu_read_unlock();
-		return -ENOTUNIQ;
-	}
-	rcu_read_unlock();
 
 	return 0;
 }
@@ -572,7 +536,7 @@ static int sta_info_insert_finish(struct sta_info *sta) __acquires(RCU)
 	list_del_rcu(&sta->list);
 	local->num_sta--;
 	synchronize_net();
-	cleanup_single_sta(sta);
+	__cleanup_single_sta(sta);
  out_err:
 	mutex_unlock(&local->sta_mtx);
 	rcu_read_lock();
@@ -586,17 +550,22 @@ int sta_info_insert_rcu(struct sta_info *sta) __acquires(RCU)
 
 	might_sleep();
 
-	mutex_lock(&local->sta_mtx);
-
 	err = sta_info_insert_check(sta);
 	if (err) {
-		sta_info_free(local, sta);
-		mutex_unlock(&local->sta_mtx);
 		rcu_read_lock();
-		return err;
+		goto out_free;
 	}
 
-	return sta_info_insert_finish(sta);
+	mutex_lock(&local->sta_mtx);
+
+	err = sta_info_insert_finish(sta);
+	if (err)
+		goto out_free;
+
+	return 0;
+ out_free:
+	sta_info_free(local, sta);
+	return err;
 }
 
 int sta_info_insert(struct sta_info *sta)
@@ -680,7 +649,7 @@ void sta_info_recalc_tim(struct sta_info *sta)
 	}
 
 	/* No need to do anything if the driver does all */
-	if (local->hw.flags & IEEE80211_HW_AP_LINK_PS && !local->ops->set_tim)
+	if (local->hw.flags & IEEE80211_HW_AP_LINK_PS)
 		return;
 
 	if (sta->dead)
@@ -902,11 +871,6 @@ static void __sta_info_destroy_part2(struct sta_info *sta)
 
 	might_sleep();
 	lockdep_assert_held(&local->sta_mtx);
-
-	if (sta->sta_state == IEEE80211_STA_AUTHORIZED) {
-		ret = sta_info_move_state(sta, IEEE80211_STA_ASSOC);
-		WARN_ON_ONCE(ret);
-	}
 
 	/* now keys can no longer be reached */
 	ieee80211_free_sta_keys(local, sta);
@@ -1715,10 +1679,6 @@ int sta_info_move_state(struct sta_info *sta,
 				atomic_inc(&sta->sdata->bss->num_mcast_sta);
 			set_bit(WLAN_STA_AUTHORIZED, &sta->_flags);
 		}
-		if (sta->sdata->vif.type == NL80211_IFTYPE_AP_VLAN ||
-		    sta->sdata->vif.type == NL80211_IFTYPE_AP)
-			cfg80211_send_layer2_update(sta->sdata->dev,
-						    sta->sta.addr);
 		break;
 	default:
 		break;

@@ -64,7 +64,7 @@ static void *sun7i_gmac_setup(struct platform_device *pdev)
 static int sun7i_gmac_init(struct platform_device *pdev, void *priv)
 {
 	struct sunxi_priv_data *gmac = priv;
-	int ret = 0;
+	int ret;
 
 	if (gmac->regulator) {
 		ret = regulator_enable(gmac->regulator);
@@ -78,18 +78,16 @@ static int sun7i_gmac_init(struct platform_device *pdev, void *priv)
 	 * rate, which then uses the auto-reparenting feature of the
 	 * clock driver, and enabling/disabling the clock.
 	 */
-	if (phy_interface_mode_is_rgmii(gmac->interface)) {
+	if (gmac->interface == PHY_INTERFACE_MODE_RGMII) {
 		clk_set_rate(gmac->tx_clk, SUN7I_GMAC_GMII_RGMII_RATE);
 		clk_prepare_enable(gmac->tx_clk);
 		gmac->clk_enabled = 1;
 	} else {
 		clk_set_rate(gmac->tx_clk, SUN7I_GMAC_MII_RATE);
-		ret = clk_prepare(gmac->tx_clk);
-		if (ret && gmac->regulator)
-			regulator_disable(gmac->regulator);
+		clk_prepare(gmac->tx_clk);
 	}
 
-	return ret;
+	return 0;
 }
 
 static void sun7i_gmac_exit(struct platform_device *pdev, void *priv)

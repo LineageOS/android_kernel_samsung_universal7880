@@ -1637,7 +1637,6 @@ ret:
 	return result;
 
 out_free:
-	em28xx_uninit_usb_xfer(dev, EM28XX_DIGITAL_MODE);
 	kfree(dvb);
 	dev->dvb = NULL;
 	goto ret;

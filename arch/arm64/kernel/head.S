@@ -456,8 +456,7 @@ __mmap_switched:
 	bl	__pi_memset
 	dsb	ishst				// Make zero page visible to PTW
 
-	adrp	x4, initial_sp
-	add	sp, x4, :lo12:initial_sp
+	adr_l	sp, initial_sp, x4
 	mov	x4, sp
 	and	x4, x4, #~(THREAD_SIZE - 1)
 	msr	sp_el0, x4			// Save thread_info
@@ -544,15 +543,9 @@ CPU_LE(	movk	x0, #0x30d0, lsl #16	)	// Clear EE and E0E on LE systems
 #endif
 
 	/* EL2 debug */
-	mrs	x0, id_aa64dfr0_el1		// Check ID_AA64DFR0_EL1 PMUVer
-	sbfx	x0, x0, #8, #4
-	cmp	x0, #1
-	b.lt	4f				// Skip if no PMU present
 	mrs	x0, pmcr_el0			// Disable debug access traps
 	ubfx	x0, x0, #11, #5			// to EL2 and allow access to
-4:
-	csel	x0, xzr, x0, lt			// all PMU counters from EL1
-	msr	mdcr_el2, x0			// (if they exist)
+	msr	mdcr_el2, x0			// all PMU counters from EL1
 
 	/* Stage-2 translation */
 	msr	vttbr_el2, xzr

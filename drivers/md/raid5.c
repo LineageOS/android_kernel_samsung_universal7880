@@ -1736,17 +1736,16 @@ static int grow_one_stripe(struct r5conf *conf, int hash)
 static int grow_stripes(struct r5conf *conf, int num)
 {
 	struct kmem_cache *sc;
-	size_t namelen = sizeof(conf->cache_name[0]);
 	int devs = max(conf->raid_disks, conf->previous_raid_disks);
 	int hash;
 
 	if (conf->mddev->gendisk)
-		snprintf(conf->cache_name[0], namelen,
+		sprintf(conf->cache_name[0],
 			"raid%d-%s", conf->level, mdname(conf->mddev));
 	else
-		snprintf(conf->cache_name[0], namelen,
+		sprintf(conf->cache_name[0],
 			"raid%d-%p", conf->level, conf->mddev);
-	snprintf(conf->cache_name[1], namelen, "%.27s-alt", conf->cache_name[0]);
+	sprintf(conf->cache_name[1], "%s-alt", conf->cache_name[0]);
 
 	conf->active_name = 0;
 	sc = kmem_cache_create(conf->cache_name[conf->active_name],
@@ -1921,9 +1920,6 @@ static int resize_stripes(struct r5conf *conf, int newsize)
 	}
 	put_online_cpus();
 
-	conf->slab_cache = sc;
-	conf->active_name = 1-conf->active_name;
-
 	/* Step 4, return new stripes to service */
 	while(!list_empty(&newstripes)) {
 		nsh = list_entry(newstripes.next, struct stripe_head, lru);
@@ -1941,6 +1937,8 @@ static int resize_stripes(struct r5conf *conf, int newsize)
 	}
 	/* critical section pass, GFP_NOIO no longer needed */
 
+	conf->slab_cache = sc;
+	conf->active_name = 1-conf->active_name;
 	if (!err)
 		conf->pool_size = newsize;
 	return err;
@@ -2076,9 +2074,7 @@ static void raid5_end_read_request(struct bio * bi, int error)
 		    && !test_bit(R5_ReadNoMerge, &sh->dev[i].flags))
 			retry = 1;
 		if (retry)
-			if (sh->qd_idx >= 0 && sh->pd_idx == i)
-				set_bit(R5_ReadError, &sh->dev[i].flags);
-			else if (test_bit(R5_ReadNoMerge, &sh->dev[i].flags)) {
+			if (test_bit(R5_ReadNoMerge, &sh->dev[i].flags)) {
 				set_bit(R5_ReadError, &sh->dev[i].flags);
 				clear_bit(R5_ReadNoMerge, &sh->dev[i].flags);
 			} else
@@ -2936,20 +2932,9 @@ static int fetch_block(struct stripe_head *sh, struct stripe_head_state *s,
 		 */
 		BUG_ON(test_bit(R5_Wantcompute, &dev->flags));
 		BUG_ON(test_bit(R5_Wantread, &dev->flags));
-
-		/*
-		 * In the raid6 case if the only non-uptodate disk is P
-		 * then we already trusted P to compute the other failed
-		 * drives. It is safe to compute rather than re-read P.
-		 * In other cases we only compute blocks from failed
-		 * devices, otherwise check/repair might fail to detect
-		 * a real inconsistency.
-		 */
-
 		if ((s->uptodate == disks - 1) &&
-		    ((sh->qd_idx >= 0 && sh->pd_idx == disk_idx) ||
 		    (s->failed && (disk_idx == s->failed_num[0] ||
-				   disk_idx == s->failed_num[1])))) {
+				   disk_idx == s->failed_num[1]))) {
 			/* have disk failed, and we're requested to fetch it;
 			 * do compute it
 			 */
@@ -3393,7 +3378,7 @@ static void handle_parity_checks6(struct r5conf *conf, struct stripe_head *sh,
 		/* now write out any block on a failed drive,
 		 * or P or Q if they were recomputed
 		 */
-		dev = NULL;
+		BUG_ON(s->uptodate < disks - 1); /* We don't need Q to recover */
 		if (s->failed == 2) {
 			dev = &sh->dev[s->failed_num[1]];
 			s->locked++;
@@ -3418,14 +3403,6 @@ static void handle_parity_checks6(struct r5conf *conf, struct stripe_head *sh,
 			set_bit(R5_LOCKED, &dev->flags);
 			set_bit(R5_Wantwrite, &dev->flags);
 		}
-		if (WARN_ONCE(dev && !test_bit(R5_UPTODATE, &dev->flags),
-			      "%s: disk%td not up to date\n",
-			      mdname(conf->mddev),
-			      dev - (struct r5dev *) &sh->dev)) {
-			clear_bit(R5_LOCKED, &dev->flags);
-			clear_bit(R5_Wantwrite, &dev->flags);
-			s->locked--;
-		}
 		clear_bit(STRIPE_DEGRADED, &sh->state);
 
 		set_bit(STRIPE_INSYNC, &sh->state);
@@ -3437,26 +3414,15 @@ static void handle_parity_checks6(struct r5conf *conf, struct stripe_head *sh,
 	case check_state_check_result:
 		sh->check_state = check_state_idle;
 
+		if (s->failed > 1)
+			break;
 		/* handle a successful check operation, if parity is correct
 		 * we are done.  Otherwise update the mismatch count and repair
 		 * parity if !MD_RECOVERY_CHECK
 		 */
 		if (sh->ops.zero_sum_result == 0) {
-			/* both parities are correct */
-			if (!s->failed)
-				set_bit(STRIPE_INSYNC, &sh->state);
-			else {
-				/* in contrast to the raid5 case we can validate
-				 * parity, but still have a failure to write
-				 * back
-				 */
-				sh->check_state = check_state_compute_result;
-				/* Returning at this point means that we may go
-				 * off and bring p and/or q uptodate again so
-				 * we make sure to check zero_sum_result again
-				 * to verify if p or q need writeback
-				 */
-			}
+			/* Any parity checked was correct */
+			set_bit(STRIPE_INSYNC, &sh->state);
 		} else {
 			atomic64_add(STRIPE_SECTORS, &conf->mddev->resync_mismatches);
 			if (test_bit(MD_RECOVERY_CHECK, &conf->mddev->recovery))

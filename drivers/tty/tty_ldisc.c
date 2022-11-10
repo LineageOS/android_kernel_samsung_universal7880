@@ -814,13 +814,12 @@ void tty_ldisc_release(struct tty_struct *tty, struct tty_struct *o_tty)
  *	the tty structure is not completely set up when this call is made.
  */
 
-int tty_ldisc_init(struct tty_struct *tty)
+void tty_ldisc_init(struct tty_struct *tty)
 {
 	struct tty_ldisc *ld = tty_ldisc_get(tty, N_TTY);
 	if (IS_ERR(ld))
-		return PTR_ERR(ld);
+		panic("n_tty: init_tty");
 	tty->ldisc = ld;
-	return 0;
 }
 
 /**

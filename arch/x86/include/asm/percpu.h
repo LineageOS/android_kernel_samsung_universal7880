@@ -184,22 +184,22 @@ do {									\
 	typeof(var) pfo_ret__;				\
 	switch (sizeof(var)) {				\
 	case 1:						\
-		asm volatile(op "b "__percpu_arg(1)",%0"\
+		asm(op "b "__percpu_arg(1)",%0"		\
 		    : "=q" (pfo_ret__)			\
 		    : constraint);			\
 		break;					\
 	case 2:						\
-		asm volatile(op "w "__percpu_arg(1)",%0"\
+		asm(op "w "__percpu_arg(1)",%0"		\
 		    : "=r" (pfo_ret__)			\
 		    : constraint);			\
 		break;					\
 	case 4:						\
-		asm volatile(op "l "__percpu_arg(1)",%0"\
+		asm(op "l "__percpu_arg(1)",%0"		\
 		    : "=r" (pfo_ret__)			\
 		    : constraint);			\
 		break;					\
 	case 8:						\
-		asm volatile(op "q "__percpu_arg(1)",%0"\
+		asm(op "q "__percpu_arg(1)",%0"		\
 		    : "=r" (pfo_ret__)			\
 		    : constraint);			\
 		break;					\
@@ -505,7 +505,7 @@ static inline int x86_this_cpu_variable_test_bit(int nr,
 {
 	int oldbit;
 
-	asm volatile("btl "__percpu_arg(2)",%1\n\t"
+	asm volatile("bt "__percpu_arg(2)",%1\n\t"
 			"sbb %0,%0"
 			: "=r" (oldbit)
 			: "m" (*(unsigned long *)addr), "Ir" (nr));

@@ -123,17 +123,13 @@ struct bcm_sock {
 	struct sock sk;
 	int bound;
 	int ifindex;
-	struct list_head notifier;
+	struct notifier_block notifier;
 	struct list_head rx_ops;
 	struct list_head tx_ops;
 	unsigned long dropped_usr_msgs;
 	struct proc_dir_entry *bcm_proc_read;
 	char procname [32]; /* inode number in decimal with \0 */
 };
-
-static LIST_HEAD(bcm_notifier_list);
-static DEFINE_SPINLOCK(bcm_notifier_lock);
-static struct bcm_sock *bcm_busy_notifier;
 
 static inline struct bcm_sock *bcm_sk(const struct sock *sk)
 {
@@ -392,7 +388,6 @@ static void bcm_tx_timeout_tsklet(unsigned long data)
 		if (!op->count && (op->flags & TX_COUNTEVT)) {
 
 			/* create notification to user */
-			memset(&msg_head, 0, sizeof(msg_head));
 			msg_head.opcode  = TX_EXPIRED;
 			msg_head.flags   = op->flags;
 			msg_head.count   = op->count;
@@ -440,7 +435,6 @@ static void bcm_rx_changed(struct bcm_op *op, struct can_frame *data)
 	/* this element is not throttled anymore */
 	data->can_dlc &= (BCM_CAN_DLC_MASK|RX_RECV);
 
-	memset(&head, 0, sizeof(head));
 	head.opcode  = RX_CHANGED;
 	head.flags   = op->flags;
 	head.count   = op->count;
@@ -552,7 +546,6 @@ static void bcm_rx_timeout_tsklet(unsigned long data)
 	struct bcm_msg_head msg_head;
 
 	/* create notification to user */
-	memset(&msg_head, 0, sizeof(msg_head));
 	msg_head.opcode  = RX_TIMEOUT;
 	msg_head.flags   = op->flags;
 	msg_head.count   = op->count;
@@ -732,23 +725,14 @@ static struct bcm_op *bcm_find_op(struct list_head *ops, canid_t can_id,
 
 static void bcm_remove_op(struct bcm_op *op)
 {
-	if (op->tsklet.func) {
-		while (test_bit(TASKLET_STATE_SCHED, &op->tsklet.state) ||
-		       test_bit(TASKLET_STATE_RUN, &op->tsklet.state) ||
-		       hrtimer_active(&op->timer)) {
-			hrtimer_cancel(&op->timer);
-			tasklet_kill(&op->tsklet);
-		}
-	}
+	hrtimer_cancel(&op->timer);
+	hrtimer_cancel(&op->thrtimer);
 
-	if (op->thrtsklet.func) {
-		while (test_bit(TASKLET_STATE_SCHED, &op->thrtsklet.state) ||
-		       test_bit(TASKLET_STATE_RUN, &op->thrtsklet.state) ||
-		       hrtimer_active(&op->thrtimer)) {
-			hrtimer_cancel(&op->thrtimer);
-			tasklet_kill(&op->thrtsklet);
-		}
-	}
+	if (op->tsklet.func)
+		tasklet_kill(&op->tsklet);
+
+	if (op->thrtsklet.func)
+		tasklet_kill(&op->thrtsklet);
 
 	if ((op->frames) && (op->frames != &op->sframe))
 		kfree(op->frames);
@@ -1391,15 +1375,20 @@ static int bcm_sendmsg(struct kiocb *iocb, struct socket *sock,
 /*
  * notification handler for netdevice status changes
  */
-static void bcm_notify(struct bcm_sock *bo, unsigned long msg,
-		       struct net_device *dev)
+static int bcm_notifier(struct notifier_block *nb, unsigned long msg,
+			void *ptr)
 {
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+	struct bcm_sock *bo = container_of(nb, struct bcm_sock, notifier);
 	struct sock *sk = &bo->sk;
 	struct bcm_op *op;
 	int notify_enodev = 0;
 
 	if (!net_eq(dev_net(dev), &init_net))
-		return;
+		return NOTIFY_DONE;
+
+	if (dev->type != ARPHRD_CAN)
+		return NOTIFY_DONE;
 
 	switch (msg) {
 
@@ -1434,28 +1423,7 @@ static void bcm_notify(struct bcm_sock *bo, unsigned long msg,
 				sk->sk_error_report(sk);
 		}
 	}
-}
 
-static int bcm_notifier(struct notifier_block *nb, unsigned long msg,
-			void *ptr)
-{
-	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
-
-	if (dev->type != ARPHRD_CAN)
-		return NOTIFY_DONE;
-	if (msg != NETDEV_UNREGISTER && msg != NETDEV_DOWN)
-		return NOTIFY_DONE;
-	if (unlikely(bcm_busy_notifier)) /* Check for reentrant bug. */
-		return NOTIFY_DONE;
-
-	spin_lock(&bcm_notifier_lock);
-	list_for_each_entry(bcm_busy_notifier, &bcm_notifier_list, notifier) {
-		spin_unlock(&bcm_notifier_lock);
-		bcm_notify(bcm_busy_notifier, msg, dev);
-		spin_lock(&bcm_notifier_lock);
-	}
-	bcm_busy_notifier = NULL;
-	spin_unlock(&bcm_notifier_lock);
 	return NOTIFY_DONE;
 }
 
@@ -1475,9 +1443,9 @@ static int bcm_init(struct sock *sk)
 	INIT_LIST_HEAD(&bo->rx_ops);
 
 	/* set notifier */
-	spin_lock(&bcm_notifier_lock);
-	list_add_tail(&bo->notifier, &bcm_notifier_list);
-	spin_unlock(&bcm_notifier_lock);
+	bo->notifier.notifier_call = bcm_notifier;
+
+	register_netdevice_notifier(&bo->notifier);
 
 	return 0;
 }
@@ -1498,14 +1466,7 @@ static int bcm_release(struct socket *sock)
 
 	/* remove bcm_ops, timer, rx_unregister(), etc. */
 
-	spin_lock(&bcm_notifier_lock);
-	while (bcm_busy_notifier == bo) {
-		spin_unlock(&bcm_notifier_lock);
-		schedule_timeout_uninterruptible(1);
-		spin_lock(&bcm_notifier_lock);
-	}
-	list_del(&bo->notifier);
-	spin_unlock(&bcm_notifier_lock);
+	unregister_netdevice_notifier(&bo->notifier);
 
 	lock_sock(sk);
 
@@ -1565,31 +1526,24 @@ static int bcm_connect(struct socket *sock, struct sockaddr *uaddr, int len,
 	struct sockaddr_can *addr = (struct sockaddr_can *)uaddr;
 	struct sock *sk = sock->sk;
 	struct bcm_sock *bo = bcm_sk(sk);
-	int ret = 0;
 
 	if (len < sizeof(*addr))
 		return -EINVAL;
 
-	lock_sock(sk);
-
-	if (bo->bound) {
-		ret = -EISCONN;
-		goto fail;
-	}
+	if (bo->bound)
+		return -EISCONN;
 
 	/* bind a device to this socket */
 	if (addr->can_ifindex) {
 		struct net_device *dev;
 
 		dev = dev_get_by_index(&init_net, addr->can_ifindex);
-		if (!dev) {
-			ret = -ENODEV;
-			goto fail;
-		}
+		if (!dev)
+			return -ENODEV;
+
 		if (dev->type != ARPHRD_CAN) {
 			dev_put(dev);
-			ret = -ENODEV;
-			goto fail;
+			return -ENODEV;
 		}
 
 		bo->ifindex = dev->ifindex;
@@ -1600,24 +1554,17 @@ static int bcm_connect(struct socket *sock, struct sockaddr *uaddr, int len,
 		bo->ifindex = 0;
 	}
 
+	bo->bound = 1;
+
 	if (proc_dir) {
 		/* unique socket address as filename */
 		sprintf(bo->procname, "%lu", sock_i_ino(sk));
 		bo->bcm_proc_read = proc_create_data(bo->procname, 0644,
 						     proc_dir,
 						     &bcm_proc_fops, sk);
-		if (!bo->bcm_proc_read) {
-			ret = -ENOMEM;
-			goto fail;
-		}
 	}
 
-	bo->bound = 1;
-
-fail:
-	release_sock(sk);
-
-	return ret;
+	return 0;
 }
 
 static int bcm_recvmsg(struct kiocb *iocb, struct socket *sock,
@@ -1691,10 +1638,6 @@ static const struct can_proto bcm_can_proto = {
 	.prot       = &bcm_proto,
 };
 
-static struct notifier_block canbcm_notifier = {
-	.notifier_call = bcm_notifier
-};
-
 static int __init bcm_module_init(void)
 {
 	int err;
@@ -1709,8 +1652,6 @@ static int __init bcm_module_init(void)
 
 	/* create /proc/net/can-bcm directory */
 	proc_dir = proc_mkdir("can-bcm", init_net.proc_net);
-	register_netdevice_notifier(&canbcm_notifier);
-
 	return 0;
 }
 
@@ -1720,8 +1661,6 @@ static void __exit bcm_module_exit(void)
 
 	if (proc_dir)
 		remove_proc_entry("can-bcm", init_net.proc_net);
-
-	unregister_netdevice_notifier(&canbcm_notifier);
 }
 
 module_init(bcm_module_init);

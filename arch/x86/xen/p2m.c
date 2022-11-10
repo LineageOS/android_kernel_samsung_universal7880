@@ -918,8 +918,7 @@ int set_foreign_p2m_mapping(struct gnttab_map_grant_ref *map_ops,
 		unsigned long mfn, pfn;
 
 		/* Do not add to override if the map failed. */
-		if (map_ops[i].status != GNTST_okay ||
-		    (kmap_ops && kmap_ops[i].status != GNTST_okay))
+		if (map_ops[i].status)
 			continue;
 
 		if (map_ops[i].flags & GNTMAP_contains_pte) {

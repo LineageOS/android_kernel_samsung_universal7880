@@ -98,26 +98,17 @@ out:
 	return ret;
 }
 
-/* Caller must provide a bhs[] with all NULL or non-NULL entries, so it
- * will be easier to handle read failure.
- */
 int ocfs2_read_blocks_sync(struct ocfs2_super *osb, u64 block,
 			   unsigned int nr, struct buffer_head *bhs[])
 {
 	int status = 0;
 	unsigned int i;
 	struct buffer_head *bh;
-	int new_bh = 0;
 
 	trace_ocfs2_read_blocks_sync((unsigned long long)block, nr);
 
 	if (!nr)
 		goto bail;
-
-	/* Don't put buffer head and re-assign it to NULL if it is allocated
-	 * outside since the caller can't be aware of this alternation!
-	 */
-	new_bh = (bhs[0] == NULL);
 
 	for (i = 0 ; i < nr ; i++) {
 		if (bhs[i] == NULL) {
@@ -125,7 +116,7 @@ int ocfs2_read_blocks_sync(struct ocfs2_super *osb, u64 block,
 			if (bhs[i] == NULL) {
 				status = -ENOMEM;
 				mlog_errno(status);
-				break;
+				goto bail;
 			}
 		}
 		bh = bhs[i];
@@ -160,25 +151,8 @@ int ocfs2_read_blocks_sync(struct ocfs2_super *osb, u64 block,
 		submit_bh(READ, bh);
 	}
 
-read_failure:
 	for (i = nr; i > 0; i--) {
 		bh = bhs[i - 1];
-
-		if (unlikely(status)) {
-			if (new_bh && bh) {
-				/* If middle bh fails, let previous bh
-				 * finish its read and then put it to
-				 * aovoid bh leak
-				 */
-				if (!buffer_jbd(bh))
-					wait_on_buffer(bh);
-				put_bh(bh);
-				bhs[i - 1] = NULL;
-			} else if (bh && buffer_uptodate(bh)) {
-				clear_buffer_uptodate(bh);
-			}
-			continue;
-		}
 
 		/* No need to wait on the buffer if it's managed by JBD. */
 		if (!buffer_jbd(bh))
@@ -189,7 +163,8 @@ read_failure:
 			 * so we can safely record this and loop back
 			 * to cleanup the other buffers. */
 			status = -EIO;
-			goto read_failure;
+			put_bh(bh);
+			bhs[i - 1] = NULL;
 		}
 	}
 
@@ -197,9 +172,6 @@ bail:
 	return status;
 }
 
-/* Caller must provide a bhs[] with all NULL or non-NULL entries, so it
- * will be easier to handle read failure.
- */
 int ocfs2_read_blocks(struct ocfs2_caching_info *ci, u64 block, int nr,
 		      struct buffer_head *bhs[], int flags,
 		      int (*validate)(struct super_block *sb,
@@ -209,7 +181,6 @@ int ocfs2_read_blocks(struct ocfs2_caching_info *ci, u64 block, int nr,
 	int i, ignore_cache = 0;
 	struct buffer_head *bh;
 	struct super_block *sb = ocfs2_metadata_cache_get_super(ci);
-	int new_bh = 0;
 
 	trace_ocfs2_read_blocks_begin(ci, (unsigned long long)block, nr, flags);
 
@@ -235,11 +206,6 @@ int ocfs2_read_blocks(struct ocfs2_caching_info *ci, u64 block, int nr,
 		goto bail;
 	}
 
-	/* Don't put buffer head and re-assign it to NULL if it is allocated
-	 * outside since the caller can't be aware of this alternation!
-	 */
-	new_bh = (bhs[0] == NULL);
-
 	ocfs2_metadata_cache_io_lock(ci);
 	for (i = 0 ; i < nr ; i++) {
 		if (bhs[i] == NULL) {
@@ -248,8 +214,7 @@ int ocfs2_read_blocks(struct ocfs2_caching_info *ci, u64 block, int nr,
 				ocfs2_metadata_cache_io_unlock(ci);
 				status = -ENOMEM;
 				mlog_errno(status);
-				/* Don't forget to put previous bh! */
-				break;
+				goto bail;
 			}
 		}
 		bh = bhs[i];
@@ -343,29 +308,12 @@ int ocfs2_read_blocks(struct ocfs2_caching_info *ci, u64 block, int nr,
 		}
 	}
 
-read_failure:
+	status = 0;
+
 	for (i = (nr - 1); i >= 0; i--) {
 		bh = bhs[i];
 
 		if (!(flags & OCFS2_BH_READAHEAD)) {
-			if (unlikely(status)) {
-				/* Clear the buffers on error including those
-				 * ever succeeded in reading
-				 */
-				if (new_bh && bh) {
-					/* If middle bh fails, let previous bh
-					 * finish its read and then put it to
-					 * aovoid bh leak
-					 */
-					if (!buffer_jbd(bh))
-						wait_on_buffer(bh);
-					put_bh(bh);
-					bhs[i] = NULL;
-				} else if (bh && buffer_uptodate(bh)) {
-					clear_buffer_uptodate(bh);
-				}
-				continue;
-			}
 			/* We know this can't have changed as we hold the
 			 * owner sem. Avoid doing any work on the bh if the
 			 * journal has it. */
@@ -381,7 +329,9 @@ read_failure:
 				 * uptodate. */
 				status = -EIO;
 				clear_buffer_needs_validate(bh);
-				goto read_failure;
+				put_bh(bh);
+				bhs[i] = NULL;
+				continue;
 			}
 
 			if (buffer_needs_validate(bh)) {
@@ -391,8 +341,11 @@ read_failure:
 				BUG_ON(buffer_jbd(bh));
 				clear_buffer_needs_validate(bh);
 				status = validate(sb, bh);
-				if (status)
-					goto read_failure;
+				if (status) {
+					put_bh(bh);
+					bhs[i] = NULL;
+					continue;
+				}
 			}
 		}
 

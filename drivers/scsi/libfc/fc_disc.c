@@ -595,12 +595,8 @@ static void fc_disc_gpn_id_resp(struct fc_seq *sp, struct fc_frame *fp,
 	mutex_lock(&disc->disc_mutex);
 	if (PTR_ERR(fp) == -FC_EX_CLOSED)
 		goto out;
-	if (IS_ERR(fp)) {
-		mutex_lock(&disc->disc_mutex);
-		fc_disc_restart(disc);
-		mutex_unlock(&disc->disc_mutex);
-		goto out;
-	}
+	if (IS_ERR(fp))
+		goto redisc;
 
 	cp = fc_frame_payload_get(fp, sizeof(*cp));
 	if (!cp)
@@ -625,7 +621,7 @@ static void fc_disc_gpn_id_resp(struct fc_seq *sp, struct fc_frame *fp,
 				new_rdata->disc_id = disc->disc_id;
 				lport->tt.rport_login(new_rdata);
 			}
-			goto free_fp;
+			goto out;
 		}
 		rdata->disc_id = disc->disc_id;
 		lport->tt.rport_login(rdata);
@@ -639,8 +635,6 @@ static void fc_disc_gpn_id_resp(struct fc_seq *sp, struct fc_frame *fp,
 redisc:
 		fc_disc_restart(disc);
 	}
-free_fp:
-	fc_frame_free(fp);
 out:
 	mutex_unlock(&disc->disc_mutex);
 	kref_put(&rdata->kref, lport->tt.rport_destroy);

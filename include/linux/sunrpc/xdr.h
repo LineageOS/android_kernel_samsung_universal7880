@@ -23,7 +23,8 @@
 #define XDR_QUADLEN(l)		(((l) + 3) >> 2)
 
 /*
- * Generic opaque `network object.'
+ * Generic opaque `network object.' At the kernel level, this type
+ * is used only by lockd.
  */
 #define XDR_MAX_NETOBJ		1024
 struct xdr_netobj {

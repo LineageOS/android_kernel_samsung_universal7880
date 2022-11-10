@@ -713,7 +713,6 @@ static struct sh_eth_cpu_data sh7734_data = {
 	.tsu		= 1,
 	.hw_crc		= 1,
 	.select_mii	= 1,
-	.shift_rd0	= 1,
 };
 
 /* SH7763 */
@@ -797,7 +796,7 @@ static struct sh_eth_cpu_data r7s72100_data = {
 
 	.ecsr_value	= ECSR_ICD,
 	.ecsipr_value	= ECSIPR_ICDIP,
-	.eesipr_value	= 0xe77f009f,
+	.eesipr_value	= 0xff7f009f,
 
 	.tx_check	= EESR_TC1 | EESR_FTC,
 	.eesr_err_check	= EESR_TWB1 | EESR_TWB | EESR_TABT | EESR_RABT |
@@ -1943,7 +1942,7 @@ static void sh_eth_get_strings(struct net_device *ndev, u32 stringset, u8 *data)
 {
 	switch (stringset) {
 	case ETH_SS_STATS:
-		memcpy(data, sh_eth_gstrings_stats,
+		memcpy(data, *sh_eth_gstrings_stats,
 		       sizeof(sh_eth_gstrings_stats));
 		break;
 	}
@@ -2213,9 +2212,9 @@ static int sh_eth_close(struct net_device *ndev)
 	/* free DMA buffer */
 	sh_eth_free_dma_buffer(mdp);
 
-	mdp->is_opened = 0;
+	pm_runtime_put_sync(&mdp->pdev->dev);
 
-	pm_runtime_put(&mdp->pdev->dev);
+	mdp->is_opened = 0;
 
 	return 0;
 }
@@ -2746,16 +2745,12 @@ static struct sh_eth_plat_data *sh_eth_parse_dt(struct device *dev)
 	struct device_node *np = dev->of_node;
 	struct sh_eth_plat_data *pdata;
 	const char *mac_addr;
-	int ret;
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return NULL;
 
-	ret = of_get_phy_mode(np);
-	if (ret < 0)
-		return NULL;
-	pdata->phy_interface = ret;
+	pdata->phy_interface = of_get_phy_mode(np);
 
 	mac_addr = of_get_mac_address(np);
 	if (mac_addr)

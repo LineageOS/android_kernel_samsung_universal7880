@@ -3473,13 +3473,7 @@ unsigned int arch_dynirq_lower_bound(unsigned int from)
 	 * dmar_alloc_hwirq() may be called before setup_IO_APIC(), so use
 	 * gsi_top if ioapic_dynirq_base hasn't been initialized yet.
 	 */
-	if (!ioapic_initialized)
-		return gsi_top;
-	/*
-	 * For DT enabled machines ioapic_dynirq_base is irrelevant and not
-	 * updated. So simply return @from if ioapic_dynirq_base == 0.
-	 */
-	return ioapic_dynirq_base ? : from;
+	return ioapic_initialized ? ioapic_dynirq_base : gsi_top;
 }
 
 int __init arch_probe_nr_irqs(void)
@@ -3647,7 +3641,6 @@ void __init setup_ioapic_dest(void)
 {
 	int pin, ioapic, irq, irq_entry;
 	const struct cpumask *mask;
-	struct irq_desc *desc;
 	struct irq_data *idata;
 
 	if (skip_ioapic_setup == 1)
@@ -3662,9 +3655,7 @@ void __init setup_ioapic_dest(void)
 		if (irq < 0 || !mp_init_irq_at_boot(ioapic, irq))
 			continue;
 
-		desc = irq_to_desc(irq);
-		raw_spin_lock_irq(&desc->lock);
-		idata = irq_desc_get_irq_data(desc);
+		idata = irq_get_irq_data(irq);
 
 		/*
 		 * Honour affinities which have been set in early boot
@@ -3675,7 +3666,6 @@ void __init setup_ioapic_dest(void)
 			mask = apic->target_cpus();
 
 		x86_io_apic_ops.set_affinity(idata, mask, false);
-		raw_spin_unlock_irq(&desc->lock);
 	}
 
 }

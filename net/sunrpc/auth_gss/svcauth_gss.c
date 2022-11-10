@@ -769,7 +769,7 @@ u32 svcauth_gss_flavor(struct auth_domain *dom)
 
 EXPORT_SYMBOL_GPL(svcauth_gss_flavor);
 
-struct auth_domain *
+int
 svcauth_gss_register_pseudoflavor(u32 pseudoflavor, char * name)
 {
 	struct gss_domain	*new;
@@ -786,23 +786,21 @@ svcauth_gss_register_pseudoflavor(u32 pseudoflavor, char * name)
 	new->h.flavour = &svcauthops_gss;
 	new->pseudoflavor = pseudoflavor;
 
+	stat = 0;
 	test = auth_domain_lookup(name, &new->h);
-	if (test != &new->h) {
-		pr_warn("svc: duplicate registration of gss pseudo flavour %s.\n",
-			name);
-		stat = -EADDRINUSE;
+	if (test != &new->h) { /* Duplicate registration */
 		auth_domain_put(test);
-		goto out_free_name;
+		kfree(new->h.name);
+		goto out_free_dom;
 	}
-	return test;
+	return 0;
 
-out_free_name:
-	kfree(new->h.name);
 out_free_dom:
 	kfree(new);
 out:
-	return ERR_PTR(stat);
+	return stat;
 }
+
 EXPORT_SYMBOL_GPL(svcauth_gss_register_pseudoflavor);
 
 static inline int
@@ -1481,7 +1479,7 @@ svcauth_gss_accept(struct svc_rqst *rqstp, __be32 *authp)
 	case RPC_GSS_PROC_DESTROY:
 		if (gss_write_verf(rqstp, rsci->mechctx, gc->gc_seq))
 			goto auth_err;
-		rsci->h.expiry_time = seconds_since_boot();
+		rsci->h.expiry_time = get_seconds();
 		set_bit(CACHE_NEGATIVE, &rsci->h.flags);
 		if (resv->iov_len + 4 > PAGE_SIZE)
 			goto drop;
@@ -1690,14 +1688,11 @@ static int
 svcauth_gss_release(struct svc_rqst *rqstp)
 {
 	struct gss_svc_data *gsd = (struct gss_svc_data *)rqstp->rq_auth_data;
-	struct rpc_gss_wire_cred *gc;
+	struct rpc_gss_wire_cred *gc = &gsd->clcred;
 	struct xdr_buf *resbuf = &rqstp->rq_res;
 	int stat = -EINVAL;
 	struct sunrpc_net *sn = net_generic(SVC_NET(rqstp), sunrpc_net_id);
 
-	if (!gsd)
-		goto out;
-	gc = &gsd->clcred;
 	if (gc->gc_proc != RPC_GSS_PROC_DATA)
 		goto out;
 	/* Release can be called twice, but we only wrap once. */
@@ -1738,10 +1733,10 @@ out_err:
 	if (rqstp->rq_cred.cr_group_info)
 		put_group_info(rqstp->rq_cred.cr_group_info);
 	rqstp->rq_cred.cr_group_info = NULL;
-	if (gsd && gsd->rsci) {
+	if (gsd->rsci)
 		cache_put(&gsd->rsci->h, sn->rsc_cache);
-		gsd->rsci = NULL;
-	}
+	gsd->rsci = NULL;
+
 	return stat;
 }
 

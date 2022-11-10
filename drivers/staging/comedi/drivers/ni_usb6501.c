@@ -531,9 +531,6 @@ static int ni6501_auto_attach(struct comedi_device *dev,
 	if (!devpriv)
 		return -ENOMEM;
 
-	sema_init(&devpriv->sem, 1);
-	usb_set_intfdata(intf, devpriv);
-
 	ret = ni6501_find_endpoints(dev);
 	if (ret)
 		return ret;
@@ -541,6 +538,9 @@ static int ni6501_auto_attach(struct comedi_device *dev,
 	ret = ni6501_alloc_usb_buffers(dev);
 	if (ret)
 		return ret;
+
+	sema_init(&devpriv->sem, 1);
+	usb_set_intfdata(intf, devpriv);
 
 	ret = comedi_alloc_subdevices(dev, 2);
 	if (ret)

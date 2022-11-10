@@ -428,6 +428,9 @@ static int m_can_do_rx_poll(struct net_device *dev, int quota)
 	}
 
 	while ((rxfs & RXFS_FFL_MASK) && (quota > 0)) {
+		if (rxfs & RXFS_RFL)
+			netdev_warn(dev, "Rx FIFO 0 Message Lost\n");
+
 		m_can_read_fifo(dev, rxfs);
 
 		quota--;
@@ -572,7 +575,7 @@ static int m_can_handle_state_change(struct net_device *dev,
 	unsigned int ecr;
 
 	switch (new_state) {
-	case CAN_STATE_ERROR_WARNING:
+	case CAN_STATE_ERROR_ACTIVE:
 		/* error warning state */
 		priv->can.can_stats.error_warning++;
 		priv->can.state = CAN_STATE_ERROR_WARNING;
@@ -600,7 +603,7 @@ static int m_can_handle_state_change(struct net_device *dev,
 	__m_can_get_berr_counter(dev, &bec);
 
 	switch (new_state) {
-	case CAN_STATE_ERROR_WARNING:
+	case CAN_STATE_ERROR_ACTIVE:
 		/* error warning state */
 		cf->can_id |= CAN_ERR_CRTL;
 		cf->data[1] = (bec.txerr > bec.rxerr) ?

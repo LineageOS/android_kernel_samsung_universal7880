@@ -185,7 +185,7 @@ static int ceph_releasepage(struct page *page, gfp_t g)
 /*
  * read a single page, without unlocking it.
  */
-static int ceph_do_readpage(struct file *filp, struct page *page)
+static int readpage_nounlock(struct file *filp, struct page *page)
 {
 	struct inode *inode = file_inode(filp);
 	struct ceph_inode_info *ci = ceph_inode(inode);
@@ -197,7 +197,7 @@ static int ceph_do_readpage(struct file *filp, struct page *page)
 	err = ceph_readpage_from_fscache(inode, page);
 
 	if (err == 0)
-		return -EINPROGRESS;
+		goto out;
 
 	dout("readpage inode %p file %p page %p index %lu\n",
 	     inode, filp, page, page->index);
@@ -227,11 +227,8 @@ out:
 
 static int ceph_readpage(struct file *filp, struct page *page)
 {
-	int r = ceph_do_readpage(filp, page);
-	if (r != -EINPROGRESS)
-		unlock_page(page);
-	else
-		r = 0;
+	int r = readpage_nounlock(filp, page);
+	unlock_page(page);
 	return r;
 }
 
@@ -761,7 +758,8 @@ retry:
 		struct page **pages = NULL;
 		mempool_t *pool = NULL;	/* Becomes non-null if mempool used */
 		struct page *page;
-		u64 offset = 0, len = 0;
+		int want;
+		u64 offset, len;
 		long writeback_stat;
 
 		next = 0;
@@ -770,9 +768,14 @@ retry:
 
 get_more_pages:
 		first = -1;
-		pvec_pages = pagevec_lookup_range_tag(&pvec, mapping, &index,
-						end, PAGECACHE_TAG_DIRTY);
-		dout("pagevec_lookup_range_tag got %d\n", pvec_pages);
+		want = min(end - index,
+			   min((pgoff_t)PAGEVEC_SIZE,
+			       max_pages - (pgoff_t)locked_pages) - 1)
+			+ 1;
+		pvec_pages = pagevec_lookup_tag(&pvec, mapping, &index,
+						PAGECACHE_TAG_DIRTY,
+						want);
+		dout("pagevec_lookup_tag got %d\n", pvec_pages);
 		if (!pvec_pages && !locked_pages)
 			break;
 		for (i = 0; i < pvec_pages && locked_pages < max_pages; i++) {
@@ -1057,7 +1060,7 @@ retry_locked:
 			goto retry_locked;
 		r = writepage_nounlock(page, NULL);
 		if (r < 0)
-			goto fail_unlock;
+			goto fail_nosnap;
 		goto retry_locked;
 	}
 
@@ -1086,14 +1089,11 @@ retry_locked:
 
 	/* we need to read it. */
 	up_read(&mdsc->snap_rwsem);
-	r = ceph_do_readpage(file, page);
-	if (r < 0) {
-		if (r == -EINPROGRESS)
-			return -EAGAIN;
-		goto fail_unlock;
-	}
+	r = readpage_nounlock(file, page);
+	if (r < 0)
+		goto fail_nosnap;
 	goto retry_locked;
-fail_unlock:
+fail_nosnap:
 	unlock_page(page);
 	return r;
 }
@@ -1204,7 +1204,7 @@ static int ceph_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	struct inode *inode = file_inode(vma->vm_file);
 	struct ceph_inode_info *ci = ceph_inode(inode);
 	struct ceph_file_info *fi = vma->vm_file->private_data;
-	loff_t off = (loff_t)vmf->pgoff << PAGE_CACHE_SHIFT;
+	loff_t off = vmf->pgoff << PAGE_CACHE_SHIFT;
 	int want, got, ret;
 
 	dout("filemap_fault %p %llx.%llx %llu~%zd trying to get caps\n",

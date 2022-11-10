@@ -990,7 +990,6 @@ void v4l2_ctrl_fill(u32 id, const char **name, enum v4l2_ctrl_type *type,
 	case V4L2_CID_FLASH_STROBE_STOP:
 	case V4L2_CID_AUTO_FOCUS_START:
 	case V4L2_CID_AUTO_FOCUS_STOP:
-	case V4L2_CID_DO_WHITE_BALANCE:
 		*type = V4L2_CTRL_TYPE_BUTTON;
 		*flags |= V4L2_CTRL_FLAG_WRITE_ONLY;
 		*min = *max = *step = *def = 0;
@@ -2080,15 +2079,16 @@ struct v4l2_ctrl *v4l2_ctrl_new_custom(struct v4l2_ctrl_handler *hdl,
 		v4l2_ctrl_fill(cfg->id, &name, &type, &min, &max, &step,
 								&def, &flags);
 
-	is_menu = (type == V4L2_CTRL_TYPE_MENU ||
-		   type == V4L2_CTRL_TYPE_INTEGER_MENU);
+	is_menu = (cfg->type == V4L2_CTRL_TYPE_MENU ||
+		   cfg->type == V4L2_CTRL_TYPE_INTEGER_MENU);
 	if (is_menu)
 		WARN_ON(step);
 	else
 		WARN_ON(cfg->menu_skip_mask);
-	if (type == V4L2_CTRL_TYPE_MENU && !qmenu) {
+	if (cfg->type == V4L2_CTRL_TYPE_MENU && qmenu == NULL)
 		qmenu = v4l2_ctrl_get_menu(cfg->id);
-	} else if (type == V4L2_CTRL_TYPE_INTEGER_MENU && !qmenu_int) {
+	else if (cfg->type == V4L2_CTRL_TYPE_INTEGER_MENU &&
+		 qmenu_int == NULL) {
 		handler_set_err(hdl, -EINVAL);
 		return NULL;
 	}

@@ -279,7 +279,7 @@ static const struct clk_init_data isp_xclk_init_data = {
 static int isp_xclk_init(struct isp_device *isp)
 {
 	struct isp_platform_data *pdata = isp->pdata;
-	struct clk_init_data init = { 0 };
+	struct clk_init_data init;
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(isp->xclks); ++i)
@@ -903,10 +903,6 @@ static int isp_pipeline_enable(struct isp_pipeline *pipe,
 					s_stream, mode);
 			pipe->do_propagation = true;
 		}
-
-		/* Stop at the first external sub-device. */
-		if (subdev->dev != isp->dev)
-			break;
 	}
 
 	return 0;
@@ -1021,10 +1017,6 @@ static int isp_pipeline_disable(struct isp_pipeline *pipe)
 				isp->crashed |= 1U << subdev->entity.id;
 			failure = -ETIMEDOUT;
 		}
-
-		/* Stop at the first external sub-device. */
-		if (subdev->dev != isp->dev)
-			break;
 	}
 
 	return failure;

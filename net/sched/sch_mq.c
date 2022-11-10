@@ -52,7 +52,7 @@ static int mq_init(struct Qdisc *sch, struct nlattr *opt)
 	/* pre-allocate qdiscs, attachment can't fail */
 	priv->qdiscs = kcalloc(dev->num_tx_queues, sizeof(priv->qdiscs[0]),
 			       GFP_KERNEL);
-	if (!priv->qdiscs)
+	if (priv->qdiscs == NULL)
 		return -ENOMEM;
 
 	for (ntx = 0; ntx < dev->num_tx_queues; ntx++) {
@@ -60,14 +60,18 @@ static int mq_init(struct Qdisc *sch, struct nlattr *opt)
 		qdisc = qdisc_create_dflt(dev_queue, default_qdisc_ops,
 					  TC_H_MAKE(TC_H_MAJ(sch->handle),
 						    TC_H_MIN(ntx + 1)));
-		if (!qdisc)
-			return -ENOMEM;
+		if (qdisc == NULL)
+			goto err;
 		priv->qdiscs[ntx] = qdisc;
 		qdisc->flags |= TCQ_F_ONETXQUEUE;
 	}
 
 	sch->flags |= TCQ_F_MQROOT;
 	return 0;
+
+err:
+	mq_destroy(sch);
+	return -ENOMEM;
 }
 
 static void mq_attach(struct Qdisc *sch)
@@ -195,7 +199,7 @@ static int mq_dump_class_stats(struct Qdisc *sch, unsigned long cl,
 	struct netdev_queue *dev_queue = mq_queue_get(sch, cl);
 
 	sch = dev_queue->qdisc_sleeping;
-	if (gnet_stats_copy_basic(d, sch->cpu_bstats, &sch->bstats) < 0 ||
+	if (gnet_stats_copy_basic(d, NULL, &sch->bstats) < 0 ||
 	    gnet_stats_copy_queue(d, NULL, &sch->qstats, sch->q.qlen) < 0)
 		return -1;
 	return 0;

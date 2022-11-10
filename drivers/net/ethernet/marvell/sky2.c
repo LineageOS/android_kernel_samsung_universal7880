@@ -215,7 +215,7 @@ io_error:
 
 static inline u16 gm_phy_read(struct sky2_hw *hw, unsigned port, u16 reg)
 {
-	u16 v = 0;
+	u16 v;
 	__gm_phy_read(hw, port, reg, &v);
 	return v;
 }
@@ -4929,20 +4929,6 @@ static const struct dmi_system_id msi_blacklist[] = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "P-79"),
 		},
 	},
-	{
-		.ident = "ASUS P6T",
-		.matches = {
-			DMI_MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC."),
-			DMI_MATCH(DMI_BOARD_NAME, "P6T"),
-		},
-	},
-	{
-		.ident = "ASUS P6X",
-		.matches = {
-			DMI_MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC."),
-			DMI_MATCH(DMI_BOARD_NAME, "P6X"),
-		},
-	},
 	{}
 };
 
@@ -5246,19 +5232,6 @@ static SIMPLE_DEV_PM_OPS(sky2_pm_ops, sky2_suspend, sky2_resume);
 
 static void sky2_shutdown(struct pci_dev *pdev)
 {
-	struct sky2_hw *hw = pci_get_drvdata(pdev);
-	int port;
-
-	for (port = 0; port < hw->ports; port++) {
-		struct net_device *ndev = hw->dev[port];
-
-		rtnl_lock();
-		if (netif_running(ndev)) {
-			dev_close(ndev);
-			netif_device_detach(ndev);
-		}
-		rtnl_unlock();
-	}
 	sky2_suspend(&pdev->dev);
 	pci_wake_from_d3(pdev, device_may_wakeup(&pdev->dev));
 	pci_set_power_state(pdev, PCI_D3hot);

@@ -642,9 +642,9 @@ static int __init watchdog_init(int sioaddr)
 	 * into the module have been registered yet.
 	 */
 	watchdog.sioaddr = sioaddr;
-	watchdog.ident.options = WDIOF_MAGICCLOSE
-				| WDIOF_KEEPALIVEPING
-				| WDIOF_CARDRESET;
+	watchdog.ident.options = WDIOC_SETTIMEOUT
+				| WDIOF_MAGICCLOSE
+				| WDIOF_KEEPALIVEPING;
 
 	snprintf(watchdog.ident.identity,
 		sizeof(watchdog.ident.identity), "%s watchdog",

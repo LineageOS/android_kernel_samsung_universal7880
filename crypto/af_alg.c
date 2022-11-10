@@ -121,10 +121,8 @@ static void alg_do_release(const struct af_alg_type *type, void *private)
 
 int af_alg_release(struct socket *sock)
 {
-	if (sock->sk) {
+	if (sock->sk)
 		sock_put(sock->sk);
-		sock->sk = NULL;
-	}
 	return 0;
 }
 EXPORT_SYMBOL_GPL(af_alg_release);
@@ -138,13 +136,11 @@ void af_alg_release_parent(struct sock *sk)
 	sk = ask->parent;
 	ask = alg_sk(sk);
 
-	local_bh_disable();
-	bh_lock_sock(sk);
+	lock_sock(sk);
 	ask->nokey_refcnt -= nokey;
 	if (!last)
 		last = !--ask->refcnt;
-	bh_unlock_sock(sk);
-	local_bh_enable();
+	release_sock(sk);
 
 	if (last)
 		sock_put(sk);

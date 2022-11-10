@@ -1568,13 +1568,17 @@ static struct sk_buff *mld_newpack(struct inet6_dev *idev, unsigned int mtu)
 		     IPV6_TLV_PADN, 0 };
 
 	/* we assume size > sizeof(ra) here */
+	/* limit our allocations to order-0 page */
+	size = min_t(int, size, SKB_MAX_ORDER(0, 0));
 	skb = sock_alloc_send_skb(sk, size, 1, &err);
+
 	if (!skb)
 		return NULL;
 
 	skb->priority = TC_PRIO_CONTROL;
+	skb->reserved_tailroom = skb_end_offset(skb) -
+				 min(mtu, skb_end_offset(skb));
 	skb_reserve(skb, hlen);
-	skb_tailroom_reserve(skb, mtu, tlen);
 
 	if (__ipv6_get_lladdr(idev, &addr_buf, IFA_F_TENTATIVE)) {
 		/* <draft-ietf-magma-mld-source-05.txt>:
@@ -2570,7 +2574,6 @@ void ipv6_mc_destroy_dev(struct inet6_dev *idev)
 		write_unlock_bh(&idev->lock);
 
 		igmp6_group_dropped(i);
-		ip6_mc_clear_src(i);
 		ma_put(i);
 
 		write_lock_bh(&idev->lock);

@@ -1169,10 +1169,8 @@ static int omap_dma_probe(struct platform_device *pdev)
 
 		rc = devm_request_irq(&pdev->dev, irq, omap_dma_irq,
 				      IRQF_SHARED, "omap-dma-engine", od);
-		if (rc) {
-			omap_dma_free(od);
+		if (rc)
 			return rc;
-		}
 	}
 
 	rc = dma_async_device_register(&od->ddev);

@@ -224,7 +224,7 @@ static int ioapic_xlate(struct irq_domain *domain,
 	return 0;
 }
 
-static const struct irq_domain_ops ioapic_irq_domain_ops = {
+const struct irq_domain_ops ioapic_irq_domain_ops = {
 	.map = mp_irqdomain_map,
 	.unmap = mp_irqdomain_unmap,
 	.xlate = ioapic_xlate,

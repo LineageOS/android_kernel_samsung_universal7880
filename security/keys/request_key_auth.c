@@ -71,12 +71,9 @@ static void request_key_auth_describe(const struct key *key,
 {
 	struct request_key_auth *rka = key->payload.data;
 
-	if (!rka)
-		return;
-
 	seq_puts(m, "key:");
 	seq_puts(m, key->description);
-	if (key_is_positive(key))
+	if (key_is_instantiated(key))
 		seq_printf(m, " pid:%d ci:%zu", rka->pid, rka->callout_len);
 }
 
@@ -90,9 +87,6 @@ static long request_key_auth_read(const struct key *key,
 	struct request_key_auth *rka = key->payload.data;
 	size_t datalen;
 	long ret;
-
-	if (!rka)
-		return -EKEYREVOKED;
 
 	datalen = rka->callout_len;
 	ret = datalen;

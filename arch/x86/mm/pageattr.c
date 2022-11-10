@@ -873,11 +873,11 @@ static void populate_pte(struct cpa_data *cpa,
 	}
 }
 
-static long populate_pmd(struct cpa_data *cpa,
-			 unsigned long start, unsigned long end,
-			 unsigned num_pages, pud_t *pud, pgprot_t pgprot)
+static int populate_pmd(struct cpa_data *cpa,
+			unsigned long start, unsigned long end,
+			unsigned num_pages, pud_t *pud, pgprot_t pgprot)
 {
-	long cur_pages = 0;
+	unsigned int cur_pages = 0;
 	pmd_t *pmd;
 
 	/*
@@ -943,12 +943,12 @@ static long populate_pmd(struct cpa_data *cpa,
 	return num_pages;
 }
 
-static long populate_pud(struct cpa_data *cpa, unsigned long start, pgd_t *pgd,
-			 pgprot_t pgprot)
+static int populate_pud(struct cpa_data *cpa, unsigned long start, pgd_t *pgd,
+			pgprot_t pgprot)
 {
 	pud_t *pud;
 	unsigned long end;
-	long cur_pages = 0;
+	int cur_pages = 0;
 
 	end = start + (cpa->numpages << PAGE_SHIFT);
 
@@ -1001,7 +1001,7 @@ static long populate_pud(struct cpa_data *cpa, unsigned long start, pgd_t *pgd,
 
 	/* Map trailing leftover */
 	if (start < end) {
-		long tmp;
+		int tmp;
 
 		pud = pud_offset(pgd, start);
 		if (pud_none(*pud))
@@ -1027,7 +1027,7 @@ static int populate_pgd(struct cpa_data *cpa, unsigned long addr)
 	pgprot_t pgprot = __pgprot(_KERNPG_TABLE);
 	pud_t *pud = NULL;	/* shut up gcc */
 	pgd_t *pgd_entry;
-	long ret;
+	int ret;
 
 	pgd_entry = cpa->pgd + pgd_index(addr);
 
@@ -1262,8 +1262,7 @@ static int cpa_process_alias(struct cpa_data *cpa)
 
 static int __change_page_attr_set_clr(struct cpa_data *cpa, int checkalias)
 {
-	unsigned long numpages = cpa->numpages;
-	int ret;
+	int ret, numpages = cpa->numpages;
 
 	while (numpages) {
 		/*

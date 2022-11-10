@@ -25,7 +25,6 @@
 #include <linux/kthread.h>
 #include <linux/cgroup.h>
 #include <linux/module.h>
-#include <linux/nospec.h>
 
 #include "vhost.h"
 
@@ -649,7 +648,6 @@ long vhost_vring_ioctl(struct vhost_dev *d, int ioctl, void __user *argp)
 	if (idx >= d->nvqs)
 		return -ENOBUFS;
 
-	idx = array_index_nospec(idx, d->nvqs);
 	vq = d->vqs[idx];
 
 	mutex_lock(&vq->mutex);
@@ -1176,7 +1174,7 @@ static int get_indirect(struct vhost_virtqueue *vq,
 		/* If this is an input descriptor, increment that count. */
 		if (desc.flags & VRING_DESC_F_WRITE) {
 			*in_num += ret;
-			if (unlikely(log && ret)) {
+			if (unlikely(log)) {
 				log[*log_num].addr = desc.addr;
 				log[*log_num].len = desc.len;
 				++*log_num;
@@ -1299,7 +1297,7 @@ int vhost_get_vq_desc(struct vhost_virtqueue *vq,
 			/* If this is an input descriptor,
 			 * increment that count. */
 			*in_num += ret;
-			if (unlikely(log && ret)) {
+			if (unlikely(log)) {
 				log[*log_num].addr = desc.addr;
 				log[*log_num].len = desc.len;
 				++*log_num;

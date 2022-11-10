@@ -61,8 +61,7 @@ struct rtable {
 	__be32			rt_gateway;
 
 	/* Miscellaneous cached information */
-	u32			rt_mtu_locked:1,
-				rt_pmtu:31;
+	u32			rt_pmtu;
 
 	struct list_head	rt_uncached;
 };
@@ -111,7 +110,7 @@ void rt_cache_flush(struct net *net);
 void rt_flush_dev(struct net_device *dev);
 struct rtable *__ip_route_output_key(struct net *, struct flowi4 *flp);
 struct rtable *ip_route_output_flow(struct net *, struct flowi4 *flp,
-				    const struct sock *sk);
+				    struct sock *sk);
 struct dst_entry *ipv4_blackhole_route(struct net *net,
 				       struct dst_entry *dst_orig);
 

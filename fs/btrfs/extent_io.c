@@ -3751,10 +3751,8 @@ static noinline_for_stack int write_one_eb(struct extent_buffer *eb,
 	struct block_device *bdev = fs_info->fs_devices->latest_bdev;
 	struct extent_io_tree *tree = &BTRFS_I(fs_info->btree_inode)->io_tree;
 	u64 offset = eb->start;
-	u32 nritems;
 	unsigned long i, num_pages;
 	unsigned long bio_flags = 0;
-	unsigned long start, end;
 	int rw = (epd->sync_io ? WRITE_SYNC : WRITE) | REQ_META;
 	int ret = 0;
 
@@ -3763,23 +3761,6 @@ static noinline_for_stack int write_one_eb(struct extent_buffer *eb,
 	atomic_set(&eb->io_pages, num_pages);
 	if (btrfs_header_owner(eb) == BTRFS_TREE_LOG_OBJECTID)
 		bio_flags = EXTENT_BIO_TREE_LOG;
-
-	/* set btree blocks beyond nritems with 0 to avoid stale content. */
-	nritems = btrfs_header_nritems(eb);
-	if (btrfs_header_level(eb) > 0) {
-		end = btrfs_node_key_ptr_offset(nritems);
-
-		memset_extent_buffer(eb, 0, end, eb->len - end);
-	} else {
-		/*
-		 * leaf:
-		 * header 0 1 2 .. N ... data_N .. data_2 data_1 data_0
-		 */
-		start = btrfs_item_nr_offset(nritems);
-		end = btrfs_leaf_data(eb) +
-		      leaf_data_end(fs_info->tree_root, eb);
-		memset_extent_buffer(eb, 0, start, end - start);
-	}
 
 	for (i = 0; i < num_pages; i++) {
 		struct page *p = eb->pages[i];
@@ -3855,8 +3836,8 @@ retry:
 	if (wbc->sync_mode == WB_SYNC_ALL)
 		tag_pages_for_writeback(mapping, index, end);
 	while (!done && !nr_to_write_done && (index <= end) &&
-			(nr_pages = pagevec_lookup_range_tag(&pvec, mapping,
-						&index, end, tag))) {
+	       (nr_pages = pagevec_lookup_tag(&pvec, mapping, &index, tag,
+			min(end - index, (pgoff_t)PAGEVEC_SIZE-1) + 1))) {
 		unsigned i;
 
 		scanned = 1;
@@ -3865,6 +3846,11 @@ retry:
 
 			if (!PagePrivate(page))
 				continue;
+
+			if (!wbc->range_cyclic && page->index > end) {
+				done = 1;
+				break;
+			}
 
 			spin_lock(&mapping->private_lock);
 			if (!PagePrivate(page)) {
@@ -3899,10 +3885,6 @@ retry:
 			if (!ret) {
 				free_extent_buffer(eb);
 				continue;
-			} else if (ret < 0) {
-				done = 1;
-				free_extent_buffer(eb);
-				break;
 			}
 
 			ret = write_one_eb(eb, fs_info, wbc, &epd);
@@ -3998,8 +3980,8 @@ retry:
 	if (wbc->sync_mode == WB_SYNC_ALL)
 		tag_pages_for_writeback(mapping, index, end);
 	while (!done && !nr_to_write_done && (index <= end) &&
-	       (nr_pages = pagevec_lookup_range_tag(&pvec, mapping, &index, end,
-			tag))) {
+	       (nr_pages = pagevec_lookup_tag(&pvec, mapping, &index, tag,
+			min(end - index, (pgoff_t)PAGEVEC_SIZE-1) + 1))) {
 		unsigned i;
 
 		scanned = 1;
@@ -4019,6 +4001,12 @@ retry:
 			}
 
 			if (unlikely(page->mapping != mapping)) {
+				unlock_page(page);
+				continue;
+			}
+
+			if (!wbc->range_cyclic && page->index > end) {
+				done = 1;
 				unlock_page(page);
 				continue;
 			}
@@ -4061,14 +4049,6 @@ retry:
 		 */
 		scanned = 1;
 		index = 0;
-
-		/*
-		 * If we're looping we could run into a page that is locked by a
-		 * writer and that writer could be waiting on writeback for a
-		 * page in our current bio, and thus deadlock, so flush the
-		 * write bio here.
-		 */
-		flush_write_bio(data);
 		goto retry;
 	}
 	btrfs_add_delayed_iput(inode);
@@ -4334,8 +4314,6 @@ int try_release_extent_mapping(struct extent_map_tree *map,
 
 			/* once for us */
 			free_extent_map(em);
-
-			cond_resched(); /* Allow large-extent preemption. */
 		}
 	}
 	return try_release_extent_state(map, tree, page, mask);
@@ -4746,28 +4724,25 @@ err:
 static void check_buffer_tree_ref(struct extent_buffer *eb)
 {
 	int refs;
-	/*
-	 * The TREE_REF bit is first set when the extent_buffer is added
-	 * to the radix tree. It is also reset, if unset, when a new reference
-	 * is created by find_extent_buffer.
+	/* the ref bit is tricky.  We have to make sure it is set
+	 * if we have the buffer dirty.   Otherwise the
+	 * code to free a buffer can end up dropping a dirty
+	 * page
 	 *
-	 * It is only cleared in two cases: freeing the last non-tree
-	 * reference to the extent_buffer when its STALE bit is set or
-	 * calling releasepage when the tree reference is the only reference.
+	 * Once the ref bit is set, it won't go away while the
+	 * buffer is dirty or in writeback, and it also won't
+	 * go away while we have the reference count on the
+	 * eb bumped.
 	 *
-	 * In both cases, care is taken to ensure that the extent_buffer's
-	 * pages are not under io. However, releasepage can be concurrently
-	 * called with creating new references, which is prone to race
-	 * conditions between the calls to check_buffer_tree_ref in those
-	 * codepaths and clearing TREE_REF in try_release_extent_buffer.
+	 * We can't just set the ref bit without bumping the
+	 * ref on the eb because free_extent_buffer might
+	 * see the ref bit and try to clear it.  If this happens
+	 * free_extent_buffer might end up dropping our original
+	 * ref by mistake and freeing the page before we are able
+	 * to add one more ref.
 	 *
-	 * The actual lifetime of the extent_buffer in the radix tree is
-	 * adequately protected by the refcount, but the TREE_REF bit and
-	 * its corresponding reference are not. To protect against this
-	 * class of races, we call check_buffer_tree_ref from the codepaths
-	 * which trigger io after they set eb->io_pages. Note that once io is
-	 * initiated, TREE_REF can no longer be cleared, so that is the
-	 * moment at which any such race is best fixed.
+	 * So bump the ref count first, then set the bit.  If someone
+	 * beat us to it, drop the ref we added.
 	 */
 	refs = atomic_read(&eb->refs);
 	if (refs >= 2 && test_bit(EXTENT_BUFFER_TREE_REF, &eb->bflags))
@@ -4825,14 +4800,12 @@ struct extent_buffer *alloc_test_extent_buffer(struct btrfs_fs_info *fs_info,
 		return eb;
 	eb = alloc_dummy_extent_buffer(start, len);
 	if (!eb)
-		return ERR_PTR(-ENOMEM);
+		return NULL;
 	eb->fs_info = fs_info;
 again:
 	ret = radix_tree_preload(GFP_NOFS & ~__GFP_HIGHMEM);
-	if (ret) {
-		exists = ERR_PTR(ret);
+	if (ret)
 		goto free_eb;
-	}
 	spin_lock(&fs_info->buffer_lock);
 	ret = radix_tree_insert(&fs_info->buffer_radix,
 				start >> PAGE_CACHE_SHIFT, eb);
@@ -5184,20 +5157,11 @@ int read_extent_buffer_pages(struct extent_io_tree *tree,
 			lock_page(page);
 		}
 		locked_pages++;
-	}
-	/*
-	 * We need to firstly lock all pages to make sure that
-	 * the uptodate bit of our pages won't be affected by
-	 * clear_extent_buffer_uptodate().
-	 */
-	for (i = start_i; i < num_pages; i++) {
-		page = eb->pages[i];
 		if (!PageUptodate(page)) {
 			num_reads++;
 			all_uptodate = 0;
 		}
 	}
-
 	if (all_uptodate) {
 		if (start_i == 0)
 			set_bit(EXTENT_BUFFER_UPTODATE, &eb->bflags);
@@ -5207,11 +5171,6 @@ int read_extent_buffer_pages(struct extent_io_tree *tree,
 	clear_bit(EXTENT_BUFFER_READ_ERR, &eb->bflags);
 	eb->read_mirror = 0;
 	atomic_set(&eb->io_pages, num_reads);
-	/*
-	 * It is possible for releasepage to clear the TREE_REF bit before we
-	 * set io_pages. See check_buffer_tree_ref for a more detailed comment.
-	 */
-	check_buffer_tree_ref(eb);
 	for (i = start_i; i < num_pages; i++) {
 		page = eb->pages[i];
 		if (!PageUptodate(page)) {
@@ -5257,8 +5216,9 @@ unlock_exit:
 	return ret;
 }
 
-void read_extent_buffer(const struct extent_buffer *eb, void *dstv,
-			unsigned long start, unsigned long len)
+void read_extent_buffer(struct extent_buffer *eb, void *dstv,
+			unsigned long start,
+			unsigned long len)
 {
 	size_t cur;
 	size_t offset;
@@ -5287,9 +5247,9 @@ void read_extent_buffer(const struct extent_buffer *eb, void *dstv,
 	}
 }
 
-int read_extent_buffer_to_user(const struct extent_buffer *eb,
-			       void __user *dstv,
-			       unsigned long start, unsigned long len)
+int read_extent_buffer_to_user(struct extent_buffer *eb, void __user *dstv,
+			unsigned long start,
+			unsigned long len)
 {
 	size_t cur;
 	size_t offset;
@@ -5324,10 +5284,10 @@ int read_extent_buffer_to_user(const struct extent_buffer *eb,
 	return ret;
 }
 
-int map_private_extent_buffer(const struct extent_buffer *eb,
-			      unsigned long start, unsigned long min_len,
-			      char **map, unsigned long *map_start,
-			      unsigned long *map_len)
+int map_private_extent_buffer(struct extent_buffer *eb, unsigned long start,
+			       unsigned long min_len, char **map,
+			       unsigned long *map_start,
+			       unsigned long *map_len)
 {
 	size_t offset = start & (PAGE_CACHE_SIZE - 1);
 	char *kaddr;
@@ -5362,8 +5322,9 @@ int map_private_extent_buffer(const struct extent_buffer *eb,
 	return 0;
 }
 
-int memcmp_extent_buffer(const struct extent_buffer *eb, const void *ptrv,
-			 unsigned long start, unsigned long len)
+int memcmp_extent_buffer(struct extent_buffer *eb, const void *ptrv,
+			  unsigned long start,
+			  unsigned long len)
 {
 	size_t cur;
 	size_t offset;

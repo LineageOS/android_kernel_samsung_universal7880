@@ -202,16 +202,8 @@ static ssize_t store_attach(struct device *dev, struct device_attribute *attr,
 
 	/* Extract socket from fd. */
 	socket = sockfd_lookup(sockfd, &err);
-	if (!socket) {
-		dev_err(dev, "failed to lookup sock");
+	if (!socket)
 		return -EINVAL;
-	}
-	if (socket->type != SOCK_STREAM) {
-		dev_err(dev, "Expecting SOCK_STREAM - found %d",
-			socket->type);
-		sockfd_put(socket);
-		return -EINVAL;
-	}
 
 	/* now need lock until setting vdev status as used */
 

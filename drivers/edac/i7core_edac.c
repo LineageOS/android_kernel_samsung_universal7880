@@ -1190,14 +1190,15 @@ static int i7core_create_sysfs_devices(struct mem_ctl_info *mci)
 
 	rc = device_add(pvt->addrmatch_dev);
 	if (rc < 0)
-		goto err_put_addrmatch;
+		return rc;
 
 	if (!pvt->is_registered) {
 		pvt->chancounts_dev = kzalloc(sizeof(*pvt->chancounts_dev),
 					      GFP_KERNEL);
 		if (!pvt->chancounts_dev) {
-			rc = -ENOMEM;
-			goto err_del_addrmatch;
+			put_device(pvt->addrmatch_dev);
+			device_del(pvt->addrmatch_dev);
+			return rc;
 		}
 
 		pvt->chancounts_dev->type = &all_channel_counts_type;
@@ -1211,18 +1212,9 @@ static int i7core_create_sysfs_devices(struct mem_ctl_info *mci)
 
 		rc = device_add(pvt->chancounts_dev);
 		if (rc < 0)
-			goto err_put_chancounts;
+			return rc;
 	}
 	return 0;
-
-err_put_chancounts:
-	put_device(pvt->chancounts_dev);
-err_del_addrmatch:
-	device_del(pvt->addrmatch_dev);
-err_put_addrmatch:
-	put_device(pvt->addrmatch_dev);
-
-	return rc;
 }
 
 static void i7core_delete_sysfs_devices(struct mem_ctl_info *mci)
@@ -1237,11 +1229,11 @@ static void i7core_delete_sysfs_devices(struct mem_ctl_info *mci)
 	device_remove_file(&mci->dev, &dev_attr_inject_enable);
 
 	if (!pvt->is_registered) {
-		device_del(pvt->chancounts_dev);
 		put_device(pvt->chancounts_dev);
+		device_del(pvt->chancounts_dev);
 	}
-	device_del(pvt->addrmatch_dev);
 	put_device(pvt->addrmatch_dev);
+	device_del(pvt->addrmatch_dev);
 }
 
 /****************************************************************************

@@ -404,13 +404,8 @@ static noinline_for_stack int ethtool_get_drvinfo(struct net_device *dev,
 		if (rc >= 0)
 			info.n_priv_flags = rc;
 	}
-	if (ops->get_regs_len) {
-		int ret = ops->get_regs_len(dev);
-
-		if (ret > 0)
-			info.regdump_len = ret;
-	}
-
+	if (ops->get_regs_len)
+		info.regdump_len = ops->get_regs_len(dev);
 	if (ops->get_eeprom_len)
 		info.eedump_len = ops->get_eeprom_len(dev);
 
@@ -861,21 +856,12 @@ static int ethtool_get_regs(struct net_device *dev, char __user *useraddr)
 		return -EFAULT;
 
 	reglen = ops->get_regs_len(dev);
-	if (reglen <= 0)
-		return reglen;
-
 	if (regs.len > reglen)
 		regs.len = reglen;
 
-	regbuf = NULL;
-	if (reglen) {
-		regbuf = vzalloc(reglen);
-		if (!regbuf)
-			return -ENOMEM;
-	}
-
-	if (regs.len < reglen)
-		reglen = regs.len;
+	regbuf = vzalloc(reglen);
+	if (reglen && !regbuf)
+		return -ENOMEM;
 
 	ops->get_regs(dev, &regs, regbuf);
 
@@ -883,7 +869,7 @@ static int ethtool_get_regs(struct net_device *dev, char __user *useraddr)
 	if (copy_to_user(useraddr, &regs, sizeof(regs)))
 		goto out;
 	useraddr += offsetof(struct ethtool_regs, data);
-	if (copy_to_user(useraddr, regbuf, reglen))
+	if (regbuf && copy_to_user(useraddr, regbuf, regs.len))
 		goto out;
 	ret = 0;
 

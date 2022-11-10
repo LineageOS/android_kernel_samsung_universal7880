@@ -387,7 +387,13 @@ static void kbd_led_update(struct work_struct *work)
 
 	asus = container_of(work, struct asus_wmi, kbd_led_work);
 
-	ctrl_param = 0x80 | (asus->kbd_led_wk & 0x7F);
+	/*
+	 * bits 0-2: level
+	 * bit 7: light on/off
+	 */
+	if (asus->kbd_led_wk > 0)
+		ctrl_param = 0x80 | (asus->kbd_led_wk & 0x7F);
+
 	asus_wmi_set_devstate(ASUS_WMI_DEVID_KBD_BACKLIGHT, ctrl_param, NULL);
 }
 
@@ -1776,10 +1782,8 @@ static int asus_wmi_add(struct platform_device *pdev)
 		err = asus_wmi_backlight_init(asus);
 		if (err && err != -ENODEV)
 			goto fail_backlight;
-	} else {
-		err = asus_wmi_set_devstate(ASUS_WMI_DEVID_BACKLIGHT, 2, NULL);
+	} else
 		pr_info("Backlight controlled by ACPI video driver\n");
-	}
 
 	status = wmi_install_notify_handler(asus->driver->event_guid,
 					    asus_wmi_notify, asus);

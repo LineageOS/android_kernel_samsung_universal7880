@@ -400,7 +400,8 @@ static int filelayout_commit_done_cb(struct rpc_task *task,
 		return -EAGAIN;
 	}
 
-	pnfs_commit_set_layoutcommit(data);
+	if (data->verf.committed == NFS_UNSTABLE)
+		pnfs_commit_set_layoutcommit(data);
 
 	return 0;
 }
@@ -769,7 +770,7 @@ filelayout_decode_layout(struct pnfs_layout_hdr *flo,
 		if (unlikely(!p))
 			goto out_err;
 		fl->fh_array[i]->size = be32_to_cpup(p++);
-		if (fl->fh_array[i]->size > NFS_MAXFHSIZE) {
+		if (sizeof(struct nfs_fh) < fl->fh_array[i]->size) {
 			printk(KERN_ERR "NFS: Too big fh %d received %d\n",
 			       i, fl->fh_array[i]->size);
 			goto out_err;

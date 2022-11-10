@@ -174,7 +174,7 @@ static int __init orion_nand_probe(struct platform_device *pdev)
 	ret = mtd_device_parse_register(mtd, NULL, &ppdata,
 			board->parts, board->nr_parts);
 	if (ret) {
-		nand_cleanup(nc);
+		nand_release(mtd);
 		goto no_dev;
 	}
 

@@ -431,6 +431,7 @@ static int cpu_psci_cpu_disable(unsigned int cpu)
 
 static void cpu_psci_cpu_die(unsigned int cpu)
 {
+	int ret;
 	/*
 	 * There are no known implementations of PSCI actually using the
 	 * power state field, pass a sensible default for now.
@@ -439,13 +440,14 @@ static void cpu_psci_cpu_die(unsigned int cpu)
 		.type = PSCI_POWER_STATE_TYPE_POWER_DOWN,
 	};
 
-	psci_ops.cpu_off(state);
+	ret = psci_ops.cpu_off(state);
+
+	pr_crit("unable to power off CPU%u (%d)\n", cpu, ret);
 }
 
 static int cpu_psci_cpu_kill(unsigned int cpu)
 {
-	int err;
-	unsigned long start, end;
+	int err, i;
 
 	if (!psci_ops.affinity_info)
 		return 1;
@@ -455,18 +457,16 @@ static int cpu_psci_cpu_kill(unsigned int cpu)
 	 * while it is dying. So, try again a few times.
 	 */
 
-	start = jiffies;
-	end = start + msecs_to_jiffies(100);
-	do {
+	for (i = 0; i < 10; i++) {
 		err = psci_ops.affinity_info(cpu_logical_map(cpu), 0);
 		if (err == PSCI_0_2_AFFINITY_LEVEL_OFF) {
-			pr_info("CPU%d killed (polled %d ms)\n", cpu,
-				jiffies_to_msecs(jiffies - start));
+			pr_info("CPU%d killed.\n", cpu);
 			return 1;
 		}
 
-		usleep_range(100, 1000);
-	} while (time_before(jiffies, end));
+		msleep(10);
+		pr_info("Retrying again to check for CPU kill\n");
+	}
 
 	pr_warn("CPU%d may not have shut down cleanly (AFFINITY_INFO reports %d)\n",
 			cpu, err);

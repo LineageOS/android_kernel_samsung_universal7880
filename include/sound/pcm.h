@@ -109,7 +109,6 @@ struct snd_pcm_ops {
 #define SNDRV_PCM_TRIGGER_PAUSE_RELEASE	4
 #define SNDRV_PCM_TRIGGER_SUSPEND	5
 #define SNDRV_PCM_TRIGGER_RESUME	6
-#define SNDRV_PCM_TRIGGER_DRAIN		7
 
 #define SNDRV_PCM_POS_XRUN		((snd_pcm_uframes_t)-1)
 
@@ -341,6 +340,10 @@ struct snd_pcm_runtime {
 	/* -- hardware description -- */
 	struct snd_pcm_hardware hw;
 	struct snd_pcm_hw_constraints hw_constraints;
+
+	/* -- interrupt callbacks -- */
+	void (*transfer_ack_begin)(struct snd_pcm_substream *substream);
+	void (*transfer_ack_end)(struct snd_pcm_substream *substream);
 
 	/* -- timer -- */
 	unsigned int timer_resolution;	/* timer resolution */
